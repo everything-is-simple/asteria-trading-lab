@@ -12,6 +12,7 @@ from original_tachibana.pm_state import run_backtest, write_jsonl
 
 
 TRADING_DAYS_PER_YEAR = 252
+SHARES_PER_HAND_NOTE = "pre-rule-change Japan: 1 hand = 1000 shares; v0.1 reports PnL in price-point × hand before share multiplier"
 
 
 @dataclass
@@ -44,6 +45,13 @@ def run_performance(files: Iterable[Path]) -> tuple[list[dict[str, Any]], dict[s
     for row in daily_rows:
         trade_price = row["trade_price"]
         realized_delta = 0.0
+        long_delta = 0
+        short_delta = 0
+        inventory_before = {
+            "gross_long": previous_long,
+            "gross_short": previous_short,
+        }
+        trade_operations: list[dict[str, Any]] = []
 
         if row["position_raw"] is not None:
             if trade_price is None:
@@ -52,24 +60,66 @@ def run_performance(files: Iterable[Path]) -> tuple[list[dict[str, Any]], dict[s
             current_short = int(row["gross_short"])
             long_delta = current_long - previous_long
             short_delta = current_short - previous_short
+            avg_long_before = cost.avg_long
+            avg_short_before = cost.avg_short
 
             if long_delta > 0:
+                trade_operations.append(
+                    {
+                        "operation": "buy_long",
+                        "quantity": long_delta,
+                        "price": trade_price,
+                        "notional_point_hand": long_delta * trade_price,
+                        "realized_pnl": 0.0,
+                    }
+                )
                 cost.long_cost += long_delta * trade_price
                 cost.long_qty += long_delta
             elif long_delta < 0:
                 close_qty = -long_delta
                 avg_long = cost.avg_long or 0.0
-                realized_delta += close_qty * (trade_price - avg_long)
+                op_pnl = close_qty * (trade_price - avg_long)
+                realized_delta += op_pnl
+                trade_operations.append(
+                    {
+                        "operation": "sell_long",
+                        "quantity": close_qty,
+                        "price": trade_price,
+                        "average_cost": avg_long_before,
+                        "notional_point_hand": close_qty * trade_price,
+                        "realized_pnl": op_pnl,
+                    }
+                )
                 cost.long_qty -= close_qty
                 cost.long_cost = avg_long * cost.long_qty
 
             if short_delta > 0:
+                trade_operations.append(
+                    {
+                        "operation": "sell_short",
+                        "quantity": short_delta,
+                        "price": trade_price,
+                        "notional_point_hand": short_delta * trade_price,
+                        "realized_pnl": 0.0,
+                    }
+                )
                 cost.short_proceeds += short_delta * trade_price
                 cost.short_qty += short_delta
             elif short_delta < 0:
                 close_qty = -short_delta
                 avg_short = cost.avg_short or 0.0
-                realized_delta += close_qty * (avg_short - trade_price)
+                op_pnl = close_qty * (avg_short - trade_price)
+                realized_delta += op_pnl
+                trade_operations.append(
+                    {
+                        "operation": "buy_to_cover_short",
+                        "quantity": close_qty,
+                        "price": trade_price,
+                        "average_cost": avg_short_before,
+                        "notional_point_hand": close_qty * trade_price,
+                        "realized_pnl": op_pnl,
+                    }
+                )
                 cost.short_qty -= close_qty
                 cost.short_proceeds = avg_short * cost.short_qty
 
@@ -103,12 +153,21 @@ def run_performance(files: Iterable[Path]) -> tuple[list[dict[str, Any]], dict[s
                 "execution_timing": row["execution_timing"],
                 "gross_long": row["gross_long"],
                 "gross_short": row["gross_short"],
+                "inventory_before": inventory_before,
+                "inventory_after": {
+                    "gross_long": row["gross_long"],
+                    "gross_short": row["gross_short"],
+                },
+                "long_delta": long_delta,
+                "short_delta": short_delta,
                 "gross_notional": gross_notional,
                 "realized_pnl": cost.realized_pnl,
+                "realized_delta": realized_delta,
                 "unrealized_pnl": unrealized_pnl,
                 "equity": equity,
                 "daily_pnl": daily_pnl,
                 "trade_raw": row["trade_raw"],
+                "trade_operations": trade_operations,
                 "position_raw": row["position_raw"],
                 "pm_action": row["pm_action"],
             }
@@ -156,7 +215,8 @@ def build_metrics(
 
     return {
         "assumptions": {
-            "unit_size": "1 hand = 1 unit",
+            "unit_size": "1 hand = 1 unit in v0.1 PnL arithmetic",
+            "shares_per_hand_note": SHARES_PER_HAND_NOTE,
             "transaction_cost": 0,
             "slippage": 0,
             "decision_basis": "previous available close_price from newspaper",

@@ -9,6 +9,14 @@ from typing import Any
 from original_tachibana.performance import run_performance, write_json
 
 
+OPERATION_LABELS = {
+    "buy_long": "买入建/加多",
+    "sell_long": "卖出平多",
+    "sell_short": "卖出建/加空",
+    "buy_to_cover_short": "买入回补空",
+}
+
+
 def build_major_trades(equity_rows: list[dict[str, Any]], metrics: dict[str, Any]) -> dict[str, Any]:
     segment_pnl = {row["segment_id"]: row for row in metrics["segment_pnl"]}
     rows_by_segment: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -24,6 +32,7 @@ def build_major_trades(equity_rows: list[dict[str, Any]], metrics: dict[str, Any
         entry_rows = [row for row in trade_rows if row["pm_action"] in {"inventory_seed", "add_on", "lock_candidate", "rebalance"}]
         exit_rows = [row for row in trade_rows if row["pm_action"] in {"reduce_add_on", "unlock", "clear"}]
         execution_prices = [row["trade_price"] for row in trade_rows]
+        trade_ledger = build_trade_ledger(trade_rows)
         max_gross = max(segment["max_gross_long"], segment["max_gross_short"])
         pnl = segment["pnl"]
         major_trades.append(
@@ -37,6 +46,7 @@ def build_major_trades(equity_rows: list[dict[str, Any]], metrics: dict[str, Any
                 "exit_trade_sequence": " / ".join(row["trade_raw"] for row in exit_rows),
                 "trade_sequence": " / ".join(row["trade_raw"] for row in trade_rows),
                 "execution_prices": execution_prices,
+                "trade_ledger": trade_ledger,
                 "max_gross_long": segment["max_gross_long"],
                 "max_gross_short": segment["max_gross_short"],
                 "max_gross_position": max_gross,
@@ -77,6 +87,61 @@ def build_major_trades(equity_rows: list[dict[str, Any]], metrics: dict[str, Any
     }
 
 
+def build_trade_ledger(trade_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ledger: list[dict[str, Any]] = []
+    cumulative_realized_pnl = 0.0
+    for row in trade_rows:
+        row_realized = sum(operation["realized_pnl"] for operation in row["trade_operations"])
+        cumulative_realized_pnl += row_realized
+        ledger.append(
+            {
+                "date_key": row["date_key"],
+                "decision_basis_date": row["decision_basis_date"],
+                "execution_timing": row["execution_timing"],
+                "close_price": row["close_price"],
+                "trade_price": row["trade_price"],
+                "trade_raw": row["trade_raw"],
+                "position_raw": row["position_raw"],
+                "inventory_before": row["inventory_before"],
+                "inventory_after": row["inventory_after"],
+                "long_delta": row["long_delta"],
+                "short_delta": row["short_delta"],
+                "operations": row["trade_operations"],
+                "row_realized_pnl": row_realized,
+                "cumulative_realized_pnl": cumulative_realized_pnl,
+            }
+        )
+    return ledger
+
+
+def format_number(value: Any, digits: int = 0) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, float):
+        return f"{value:.{digits}f}"
+    return str(value)
+
+
+def format_inventory(inventory: dict[str, Any]) -> str:
+    return f"L{inventory['gross_long']} / S{inventory['gross_short']}"
+
+
+def format_operations(operations: list[dict[str, Any]]) -> str:
+    if not operations:
+        return "-"
+    parts = []
+    for operation in operations:
+        label = OPERATION_LABELS.get(operation["operation"], operation["operation"])
+        pnl = operation["realized_pnl"]
+        avg = operation.get("average_cost")
+        avg_text = f", 均价 {avg:.2f}" if avg is not None else ""
+        parts.append(
+            f"{label} {operation['quantity']}手 @ {operation['price']}{avg_text}, "
+            f"成交额点手 {operation['notional_point_hand']:.0f}, 实现 {pnl:.2f}"
+        )
+    return "<br>".join(parts)
+
+
 def render_markdown(report: dict[str, Any]) -> str:
     coverage = report["coverage"]
     summary = report["summary"]
@@ -85,9 +150,11 @@ def render_markdown(report: dict[str, Any]) -> str:
         "",
         "## 定义",
         "",
-        "本报告按用户定义的“一大笔交易”统计：从第一笔开仓/加码开始，经过未平仓库存累积，直到库存归零平仓为止。",
+        "本报告按用户定义的“一大笔交易”统计：从第一笔开仓/加码开始，经过未平仓库存累积，直到库存归零平仓为止。总表只做索引；逐笔查账见 `original-tachibana-major-trades/` 下 15 份单笔报告。",
         "",
         "记号语义：`—5` 表示买入 5 张并增加多头；`5—` 表示卖出 5 张并增加空头或减少多头；未平仓横杠左侧为空头，右侧为多头。",
+        "",
+        "单位说明：已记录日本改交易规则前一手为 1000 股；本 v0.1 报告的 PnL 仍先按 `价格点 × 手数` 展开，尚未乘 1000。",
         "",
         "## 总览",
         "",
@@ -116,12 +183,12 @@ def render_markdown(report: dict[str, Any]) -> str:
         "",
         "## 逐笔明细",
         "",
-        "| ID | 起始 | 结束 | 方向 | 最大多头 | 最大空头 | PnL | 结果 | 开单/加码序列 | 平仓序列 |",
-        "|---|---|---|---|---:|---:|---:|---|---|---|",
+        "| ID | 单笔报告 | 起始 | 结束 | 方向 | 最大多头 | 最大空头 | PnL | 结果 | 开单/加码序列 | 平仓序列 |",
+        "|---|---|---|---|---|---:|---:|---:|---|---|---|",
     ]
     for trade in report["major_trades"]:
         lines.append(
-            "| {major_trade_id} | {start_date} | {end_date} | {direction} | {max_gross_long} | {max_gross_short} | {pnl:.0f} | {result} | {entry} | {exit} |".format(
+            "| {major_trade_id} | [明细](./original-tachibana-major-trades/{major_trade_id}.md) | {start_date} | {end_date} | {direction} | {max_gross_long} | {max_gross_short} | {pnl:.0f} | {result} | {entry} | {exit} |".format(
                 major_trade_id=trade["major_trade_id"],
                 start_date=trade["start_date"],
                 end_date=trade["end_date"],
@@ -139,7 +206,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             "",
             "## 重点样本",
             "",
-            "S013 是 1976-10 到 1976-11 的大笔多头交易：`—10 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —20 / —50 / —102` 买入累积到多头 200 张，随后 `200 —` 卖出清仓，PnL 约 +41140。",
+            "S013 是 1976-10 到 1976-11 的大笔多头交易：`—10 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —20 / —50 / —102` 买入累积到多头 200 张，随后 `200 —` 卖出清仓，PnL 约 +41140 点手。详见单独报告。",
             "",
             "## 限制",
             "",
@@ -149,6 +216,65 @@ def render_markdown(report: dict[str, Any]) -> str:
         ]
     )
     return "\n".join(lines) + "\n"
+
+
+def render_single_trade_markdown(trade: dict[str, Any]) -> str:
+    lines = [
+        f"# 原始立花法 v0.1 大笔交易 {trade['major_trade_id']} 回测报告",
+        "",
+        "## 摘要",
+        "",
+        "| 项目 | 数值 |",
+        "|---|---:|",
+        f"| 起始日期 | {trade['start_date']} |",
+        f"| 结束日期 | {trade['end_date']} |",
+        f"| 方向 | {trade['direction']} |",
+        f"| 成交行数 | {trade['trade_count']} |",
+        f"| 最大多头 | {trade['max_gross_long']} 手 |",
+        f"| 最大空头 | {trade['max_gross_short']} 手 |",
+        f"| PnL | {trade['pnl']:.2f} 点手 |",
+        f"| 结果 | {trade['result']} |",
+        "",
+        "单位说明：本报告按 `价格点 × 手数` 展开；一手 1000 股已记录，但本 v0.1 明细暂不乘 1000。",
+        "",
+        "## 逐笔成交流水",
+        "",
+        "| 日期 | 判断依据日 | 成交价 | 买卖原文 | 成交操作 | 成交前库存 | 成交后库存 | 当笔实现PnL | 累计实现PnL |",
+        "|---|---|---:|---|---|---|---|---:|---:|",
+    ]
+    for ledger in trade["trade_ledger"]:
+        lines.append(
+            "| {date_key} | {basis} | {trade_price} | {trade_raw} | {operations} | {before} | {after} | {row_pnl} | {cum_pnl} |".format(
+                date_key=ledger["date_key"],
+                basis=ledger["decision_basis_date"] or "-",
+                trade_price=format_number(ledger["trade_price"]),
+                trade_raw=ledger["trade_raw"],
+                operations=format_operations(ledger["operations"]),
+                before=format_inventory(ledger["inventory_before"]),
+                after=format_inventory(ledger["inventory_after"]),
+                row_pnl=format_number(ledger["row_realized_pnl"], 2),
+                cum_pnl=format_number(ledger["cumulative_realized_pnl"], 2),
+            )
+        )
+    lines.extend(
+        [
+            "",
+            "## 原始序列",
+            "",
+            f"- 成交序列：`{trade['trade_sequence']}`",
+            f"- 开单/加码序列：`{trade['entry_trade_sequence'] or '-'}`",
+            f"- 平仓序列：`{trade['exit_trade_sequence'] or '-'}`",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
+def write_single_trade_reports(report: dict[str, Any], report_path: Path) -> None:
+    detail_dir = report_path.parent / "original-tachibana-major-trades"
+    detail_dir.mkdir(parents=True, exist_ok=True)
+    for trade in report["major_trades"]:
+        path = detail_dir / f"{trade['major_trade_id']}.md"
+        path.write_text(render_single_trade_markdown(trade), encoding="utf-8", newline="\n")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -168,9 +294,12 @@ def main(argv: list[str] | None = None) -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     write_json(out_dir / "major_trades.json", report)
-    Path(args.report_path).write_text(render_markdown(report), encoding="utf-8", newline="\n")
+    report_path = Path(args.report_path)
+    report_path.write_text(render_markdown(report), encoding="utf-8", newline="\n")
+    write_single_trade_reports(report, report_path)
     print(f"wrote {len(report['major_trades'])} major trades to {out_dir / 'major_trades.json'}")
     print(f"wrote report to {args.report_path}")
+    print(f"wrote single-trade reports to {report_path.parent / 'original-tachibana-major-trades'}")
     return 0
 
 

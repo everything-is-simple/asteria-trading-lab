@@ -9,6 +9,7 @@ from original_tachibana.performance import run_performance
 from original_tachibana.major_trades import build_major_trades
 from original_tachibana.audit_source_data import audit_files
 from original_tachibana.pm_state import parse_inventory, run_backtest
+from original_tachibana.single_trade_runner import run_single_trade
 
 
 DATA_DIR = ROOT / "data" / "pioneer-1975-1976" / "json"
@@ -97,6 +98,15 @@ class MinimalBacktestTest(unittest.TestCase):
         self.assertEqual(november_trade["exit_trade_sequence"], "200 —")
         self.assertAlmostEqual(november_trade["pnl"], 41140.0)
         self.assertEqual(report["summary"]["best_major_trade"]["major_trade_id"], "S013")
+        self.assertEqual(november_trade["trade_ledger"][0]["trade_price"], 2250)
+        self.assertEqual(november_trade["trade_ledger"][0]["operations"][0]["operation"], "buy_long")
+        self.assertEqual(november_trade["trade_ledger"][0]["operations"][0]["quantity"], 10)
+        self.assertEqual(november_trade["trade_ledger"][-2]["trade_raw"], "—102")
+        self.assertEqual(november_trade["trade_ledger"][-2]["operations"][0]["quantity"], 102)
+        self.assertEqual(november_trade["trade_ledger"][-1]["trade_raw"], "200 —")
+        self.assertEqual(november_trade["trade_ledger"][-1]["operations"][0]["operation"], "sell_long")
+        self.assertEqual(november_trade["trade_ledger"][-1]["operations"][0]["quantity"], 200)
+        self.assertAlmostEqual(november_trade["trade_ledger"][-1]["cumulative_realized_pnl"], 41140.0)
 
     def test_source_data_audit_covers_json_and_images(self) -> None:
         report = audit_files(DATA_DIR, SOURCE_DIR)
@@ -108,6 +118,23 @@ class MinimalBacktestTest(unittest.TestCase):
         self.assertEqual(report["summary"]["error_count"], 0)
         self.assertEqual(report["summary"]["warning_count"], 0)
         self.assertEqual(report["issues"], [])
+
+    def test_single_trade_entrypoints_exist_and_replay_s013(self) -> None:
+        entry_dir = ROOT / "src" / "original_tachibana" / "single_trades"
+        entrypoints = sorted(entry_dir.glob("trade_s[0-9][0-9][0-9].py"))
+
+        self.assertEqual(len(entrypoints), 15)
+        self.assertTrue((entry_dir / "trade_s001.py").exists())
+        self.assertTrue((entry_dir / "trade_s015.py").exists())
+
+        out_dir = ROOT / "data" / "pioneer-1975-1976" / "backtest-v0.1" / "test-single-trades"
+        report_dir = ROOT / "docs" / "backtest-spec" / "test-single-trades"
+        trade = run_single_trade("S013", DATA_DIR, out_dir, report_dir)
+
+        self.assertEqual(trade["major_trade_id"], "S013")
+        self.assertEqual(trade["trade_ledger"][-1]["trade_raw"], "200 —")
+        self.assertAlmostEqual(trade["trade_ledger"][-1]["cumulative_realized_pnl"], 41140.0)
+        self.assertTrue((report_dir / "S013.md").exists())
 
 
 if __name__ == "__main__":

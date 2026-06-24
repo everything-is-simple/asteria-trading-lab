@@ -20,6 +20,7 @@ artifacts/
 tmp/
 .cache/
 data/pioneer-1975-1976/backtest-v0.1/
+docs/backtest-spec/test-single-trades/
 
 # Large raw source placeholders
 research/sources/local-only/

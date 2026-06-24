@@ -14,6 +14,7 @@
 - `original_tachibana/major_trades.py`：按“一大笔交易”生成逐笔回测报告。
 - `original_tachibana/audit_source_data.py`：审计 24 个 JSON 与 24 张源图的对应关系和账面一致性。
 - 输出目标：`data/pioneer-1975-1976/backtest-v0.1/`。
+- 单笔报告目标：`docs/backtest-spec/original-tachibana-major-trades/S001.md` 至 `S015.md`。
 
 运行：
 
