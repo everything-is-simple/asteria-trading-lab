@@ -53,6 +53,8 @@
 | [1976-11](../monthly/1976-11.md) `—5 -> 35 —` | 方向切换并形成新中心单候选。 | `reversal_flip` 后中心单应重置。 |
 | [1976-12](../monthly/1976-12.md) `35 — -> 150 — -> 0` | 大仓位推进后，按 `150 — -> 100 — -> 50 — -> 0` 三段式退出。 | 支持 `distribution_reduce`、`clear` 与 `protect_profit_before_vanity`，并证明利润保护应进入 PM 而不是 MALF。 |
 | [1976-04](../monthly/1976-04.md) `— 10 -> 2 — 20 -> 4 — 5` | 前置右侧库存转为双侧库存，再逐步收束。 | 支持 `inventory_rebalance`、`lock_candidate` 与双侧均价字段；但不能仅凭双侧记录判定为锁单。 |
+| [1976-03](../monthly/1976-03.md) `—12 -> 0 -> —10` | 右侧库存先清零，再重新建立月末 `—10`。 | 支持 `reset_after_clear` 与 `inventory_seed`，说明 4 月双侧库存有明确前置来源。 |
+| [1976-05](../monthly/1976-05.md) `4 — 5 -> 10 — 5 -> 10 — -> 0` | 4 月双侧库存跨月延续，先解除右侧，再最终清仓。 | 支持 `unlock`、`clear` 与 `dual_inventory_chain`，增强 4 月 `lock_candidate` 的可信度。 |
 
 ## 仓位原则
 
@@ -132,7 +134,7 @@ flowchart LR
 | `average_price_long` | number/null | 多头均价 |
 | `average_price_short` | number/null | 空头均价 |
 | `lock_size` | number | 双向锁定规模 |
-| `pm_action` | enum | `open_center / add_on / reduce_add_on / reduce_center / lock / lock_candidate / unlock / rebalance / clear` |
+| `pm_action` | enum | `open_center / add_on / reduce_add_on / reduce_center / inventory_seed / lock / lock_candidate / unlock / rebalance / clear` |
 | `pm_reason` | list | `preserve_core_then_adjust`、`add_only_with_context` 等原则代码 |
 | `source_anchor` | list | 月报链接、章节链接、PDF 页码、图片编号 |
 
@@ -143,7 +145,7 @@ flowchart LR
 - `center_position` 的自动识别规则尚未确定。现在只能基于月报和书中解释做人工标注。
 - 锁单与普通反手的判别需要更精细的交易事实和书页校勘，不能只凭双向仓位判断；1976-04 应先标为 `lock_candidate`。
 - 均价计算需要与重建 JSON 的价格字段严格对齐，后续回测前必须单独校验。
-- 1976-04/11/12 已纳入 PM 定义验证，但 1976-03/05 仍需补齐以串联双侧库存的前后文。
+- 1976-03/04/05/11/12 已纳入 PM 定义验证；3-5 月已经构成第一条可追踪的双侧库存链。
 - 选股与仓位规模的关系尚未定义，未来可能需要新增 `Tachibana Stock Selection` 或并入 Method。
 - 1976-11 已证明 `clear`、`center reset`、`add-on scale alert` 需要进入下一版 PM 规则。
 - 1976-12 已证明大仓位退出不一定是一次性清仓，也可能是规则化的三段式 `distribution_reduce -> clear`。
