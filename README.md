@@ -21,8 +21,9 @@
 9. [docs/backtest-spec/original-tachibana-v0.1-statistics-report.md](docs/backtest-spec/original-tachibana-v0.1-statistics-report.md)
 10. [docs/backtest-spec/original-tachibana-v0.1-performance-report.md](docs/backtest-spec/original-tachibana-v0.1-performance-report.md)
 11. [docs/backtest-spec/original-tachibana-v0.1-major-trades-report.md](docs/backtest-spec/original-tachibana-v0.1-major-trades-report.md)
-12. [docs/backtest-spec/original-tachibana-v0.1-source-data-audit.md](docs/backtest-spec/original-tachibana-v0.1-source-data-audit.md)
-13. [docs/tachibana/index/Tachibana-A股适配版-雏形.md](docs/tachibana/index/Tachibana-A%E8%82%A1%E9%80%82%E9%85%8D%E7%89%88-%E9%9B%8F%E5%BD%A2.md)
+12. [docs/backtest-spec/original-tachibana-v0.1-quant-report.md](docs/backtest-spec/original-tachibana-v0.1-quant-report.md)
+13. [docs/backtest-spec/original-tachibana-v0.1-source-data-audit.md](docs/backtest-spec/original-tachibana-v0.1-source-data-audit.md)
+14. [docs/tachibana/index/Tachibana-A股适配版-雏形.md](docs/tachibana/index/Tachibana-A%E8%82%A1%E9%80%82%E9%85%8D%E7%89%88-%E9%9B%8F%E5%BD%A2.md)
 
 ## 当前状态
 

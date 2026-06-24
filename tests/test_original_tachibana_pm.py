@@ -7,6 +7,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from original_tachibana.performance import run_performance
 from original_tachibana.major_trades import build_major_trades
+from original_tachibana.quant_report import build_quant_report
 from original_tachibana.audit_source_data import audit_files
 from original_tachibana.pm_state import parse_inventory, run_backtest
 from original_tachibana.single_trade_runner import run_single_trade
@@ -107,6 +108,26 @@ class MinimalBacktestTest(unittest.TestCase):
         self.assertEqual(november_trade["trade_ledger"][-1]["operations"][0]["operation"], "sell_long")
         self.assertEqual(november_trade["trade_ledger"][-1]["operations"][0]["quantity"], 200)
         self.assertAlmostEqual(november_trade["trade_ledger"][-1]["cumulative_realized_pnl"], 41140.0)
+
+    def test_quant_report_metrics_are_reproducible_for_major_trades(self) -> None:
+        files = sorted(DATA_DIR.glob("[0-9][0-9][0-9][0-9]-[0-9][0-9].json"))
+        equity_rows, metrics = run_performance(files)
+        report = build_quant_report(equity_rows, metrics)
+        stats = report["trade_statistics"]
+
+        self.assertEqual(report["coverage"]["major_trade_count"], 15)
+        self.assertEqual(stats["winning_trades"], 10)
+        self.assertEqual(stats["losing_trades"], 5)
+        self.assertAlmostEqual(stats["win_rate"], 2 / 3)
+        self.assertAlmostEqual(stats["total_pnl"], 80187.0)
+        self.assertAlmostEqual(stats["gross_profit"], 85737.0)
+        self.assertAlmostEqual(stats["gross_loss"], -5550.0)
+        self.assertAlmostEqual(stats["payoff_ratio"], 7.724054054054055)
+        self.assertAlmostEqual(stats["profit_factor"], 15.448108108108108)
+        self.assertAlmostEqual(stats["expectancy_per_trade"], 5345.8)
+        self.assertEqual(stats["best_trade"]["major_trade_id"], "S013")
+        self.assertEqual(stats["worst_trade"]["major_trade_id"], "S015")
+        self.assertAlmostEqual(report["account_performance"]["sharpe"], 1.06669959543025)
 
     def test_source_data_audit_covers_json_and_images(self) -> None:
         report = audit_files(DATA_DIR, SOURCE_DIR)
