@@ -1,0 +1,265 @@
+{
+  "symbol": "Pioneer",
+  "year": 1976,
+  "month": 2,
+  "source_image": "Z:\\2012.(Japan)【立花义正】\\1975-1976-24 张交易谱-截图\\你也能成为股票操作高手（立花义正）B0289.jpg",
+  "source_pdf": "Z:\\2012.(Japan)【立花义正】\\丽花义正-交易谱（1975.01-1976.12）\\7602.pdf",
+  "notes": [
+    "由月表 OCR 文本生成，并回填到按月 JSON 结构。",
+    "trade_raw 与 position_raw 保留原始写法，不预先推断多空语义。"
+  ],
+  "rows": [
+    {
+      "day": 1,
+      "day_marker": "日",
+      "close_price": null,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 2,
+      "day_marker": null,
+      "close_price": 2370,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 3,
+      "day_marker": null,
+      "close_price": 2440,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 4,
+      "day_marker": null,
+      "close_price": 2430,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 5,
+      "day_marker": null,
+      "close_price": 2400,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 6,
+      "day_marker": null,
+      "close_price": 2380,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 7,
+      "day_marker": null,
+      "close_price": 2330,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 8,
+      "day_marker": "日",
+      "close_price": null,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 9,
+      "day_marker": null,
+      "close_price": 2300,
+      "trade_price": 2320,
+      "trade_price_note": null,
+      "trade_raw": "— 2",
+      "position_raw": "— 2"
+    },
+    {
+      "day": 10,
+      "day_marker": null,
+      "close_price": 2310,
+      "trade_price": 2300,
+      "trade_price_note": null,
+      "trade_raw": "— 3",
+      "position_raw": "— 5"
+    },
+    {
+      "day": 11,
+      "day_marker": "假",
+      "close_price": null,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 12,
+      "day_marker": null,
+      "close_price": 2340,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 13,
+      "day_marker": null,
+      "close_price": 2390,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 14,
+      "day_marker": null,
+      "close_price": 2330,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 15,
+      "day_marker": "日",
+      "close_price": null,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 16,
+      "day_marker": null,
+      "close_price": 2340,
+      "trade_price": 2330,
+      "trade_price_note": null,
+      "trade_raw": "— 5",
+      "position_raw": "— 10"
+    },
+    {
+      "day": 17,
+      "day_marker": null,
+      "close_price": 2340,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 18,
+      "day_marker": null,
+      "close_price": 2280,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 19,
+      "day_marker": null,
+      "close_price": 2290,
+      "trade_price": 2320,
+      "trade_price_note": null,
+      "trade_raw": "— 2",
+      "position_raw": "— 12"
+    },
+    {
+      "day": 20,
+      "day_marker": null,
+      "close_price": 2290,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 21,
+      "day_marker": "假",
+      "close_price": null,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 22,
+      "day_marker": "日",
+      "close_price": null,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 23,
+      "day_marker": null,
+      "close_price": 2340,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 24,
+      "day_marker": null,
+      "close_price": 2330,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 25,
+      "day_marker": null,
+      "close_price": 2340,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 26,
+      "day_marker": null,
+      "close_price": 2390,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 27,
+      "day_marker": null,
+      "close_price": 2400,
+      "trade_price": null,
+      "trade_price_note": null,
+      "trade_raw": null,
+      "position_raw": null
+    },
+    {
+      "day": 28,
+      "day_marker": null,
+      "close_price": 2350,
+      "trade_price": 2360,
+      "trade_price_note": null,
+      "trade_raw": "5 —",
+      "position_raw": "— 7"
+    }
+  ]
+}

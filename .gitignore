@@ -1,0 +1,24 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+~$*
+*.tmp
+*.bak
+
+# Python / Node / misc caches
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+
+# Local outputs
+output/
+reports/
+artifacts/
+tmp/
+.cache/
+
+# Large raw source placeholders
+research/sources/local-only/
