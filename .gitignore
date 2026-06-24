@@ -19,6 +19,7 @@ reports/
 artifacts/
 tmp/
 .cache/
+data/pioneer-1975-1976/backtest-v0.1/
 
 # Large raw source placeholders
 research/sources/local-only/

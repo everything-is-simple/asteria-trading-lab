@@ -29,8 +29,8 @@
 | `center_size` | 中心单候选规模 | 1976-11 月末 `35 —` 可作为 1976-12 前置中心单候选。 |
 | `add_on_size` | 加码单候选规模 | 用于识别 `—24 -> —200`、`35 — -> 150 —`。 |
 | `gross_position` | 单侧总暴露 | 用于触发加码尺度警戒。 |
-| `gross_long` | 左侧总手数 | 用于保留双侧库存事实。 |
-| `gross_short` | 右侧总手数 | 用于保留双侧库存事实。 |
+| `gross_long` | 横杠右侧总手数，即多头库存 | 用于保留双侧库存事实。 |
+| `gross_short` | 横杠左侧总手数，即空头库存 | 用于保留双侧库存事实。 |
 | `lock_candidate_size` | 锁单候选规模 | 双侧同时存在时先标候选，后续再确认是否为锁单。 |
 | `pm_action` | PM 动作 | `open_center / add_on / reduce_add_on / reduce_center / inventory_seed / lock_candidate / unlock / clear` 为第一批候选。 |
 | `scale_alert` | 加码尺度警戒 | 当单笔加码或总仓位扩张明显偏离前序节奏时触发。 |

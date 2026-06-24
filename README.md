@@ -17,7 +17,12 @@
 5. [docs/tachibana/index/MALF-立花映射总表.md](docs/tachibana/index/MALF-%E7%AB%8B%E8%8A%B1%E6%98%A0%E5%B0%84%E6%80%BB%E8%A1%A8.md)
 6. [docs/tachibana/index/Tachibana-Method-雏形.md](docs/tachibana/index/Tachibana-Method-%E9%9B%8F%E5%BD%A2.md)
 7. [docs/tachibana/index/Tachibana-Position-Management-雏形.md](docs/tachibana/index/Tachibana-Position-Management-%E9%9B%8F%E5%BD%A2.md)
-8. [docs/tachibana/index/Tachibana-A股适配版-雏形.md](docs/tachibana/index/Tachibana-A%E8%82%A1%E9%80%82%E9%85%8D%E7%89%88-%E9%9B%8F%E5%BD%A2.md)
+8. [docs/backtest-spec/original-tachibana-method-v0.1.md](docs/backtest-spec/original-tachibana-method-v0.1.md)
+9. [docs/backtest-spec/original-tachibana-v0.1-statistics-report.md](docs/backtest-spec/original-tachibana-v0.1-statistics-report.md)
+10. [docs/backtest-spec/original-tachibana-v0.1-performance-report.md](docs/backtest-spec/original-tachibana-v0.1-performance-report.md)
+11. [docs/backtest-spec/original-tachibana-v0.1-major-trades-report.md](docs/backtest-spec/original-tachibana-v0.1-major-trades-report.md)
+12. [docs/backtest-spec/original-tachibana-v0.1-source-data-audit.md](docs/backtest-spec/original-tachibana-v0.1-source-data-audit.md)
+13. [docs/tachibana/index/Tachibana-A股适配版-雏形.md](docs/tachibana/index/Tachibana-A%E8%82%A1%E9%80%82%E9%85%8D%E7%89%88-%E9%9B%8F%E5%BD%A2.md)
 
 ## 当前状态
 
