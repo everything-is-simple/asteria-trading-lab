@@ -12,7 +12,10 @@ from original_tachibana.pm_state import run_backtest, write_jsonl
 
 
 TRADING_DAYS_PER_YEAR = 252
-SHARES_PER_HAND_NOTE = "pre-rule-change Japan: 1 hand = 1000 shares; v0.1 reports PnL in price-point × hand before share multiplier"
+SHARES_PER_HAND_NOTE = (
+    "v0.1 reports PnL in price-point × recorded unit before share multiplier; "
+    "Pioneer records note the trading unit changed from 1000 shares to 100 shares on 1976-09-21"
+)
 
 
 @dataclass

@@ -35,7 +35,7 @@ def build_quant_report(equity_rows: list[dict[str, Any]], metrics: dict[str, Any
     return {
         "scope": {
             "sample": "Pioneer 1975-1976 original Tachibana v0.1, 15 closed major trades",
-            "unit": "point-hand: execution price point × hands, before multiplying the recorded 1000 shares per hand",
+            "unit": "point-hand: execution price point × recorded hands/units, before any date-dependent share multiplier",
             "cost_model": metrics["assumptions"]["transaction_cost"],
             "slippage_model": metrics["assumptions"]["slippage"],
             "execution_model": metrics["assumptions"]["execution_timing"],
@@ -147,7 +147,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- 单位：{scope['unit']}",
         f"- 下单：{scope['decision_basis']}；{scope['execution_model']}",
         f"- 成本：手续费 {scope['cost_model']}，滑点 {scope['slippage_model']}",
-        "- 说明：未来若把一手换算为 1000 股，金额类指标整体乘 1000，胜率、夏普率、盈亏比、Profit Factor 等比率不变。",
+        "- 说明：资金层需按日期/交易单位表换算；part4 记录 PIONEER 自 1976-09-21 起交易单位改为 100 股，不能把全样本金额统一乘 1000。胜率、夏普率、盈亏比、Profit Factor 等比率不受股数乘数影响。",
         "",
         "## 核心指标",
         "",
@@ -253,7 +253,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             "",
             "- 这份报告回答“十五大交易作为一个交易系统，量化统计如何”。",
             "- 查某一笔为什么赚亏，仍看 `docs/backtest-spec/original-tachibana-major-trades/Sxxx.md` 的逐笔成交价、手数、库存和实现 PnL。",
-            "- 本 v0.1 不加入手续费、滑点、税费，也不把点手金额乘 1000；这些是后续资金口径版本的工作。",
+            "- 本 v0.1 不加入手续费、滑点、税费，也不把点手金额统一乘 1000；这些是后续日期依赖资金口径版本的工作。",
         ]
     )
     return "\n".join(lines) + "\n"

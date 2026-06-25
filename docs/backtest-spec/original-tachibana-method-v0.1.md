@@ -2,9 +2,9 @@
 
 ## 版本定位
 
-本文件冻结 `原始立花义正交易法 v0.1` 与 `Tachibana Position Management v0.1` 的最小定义，并作为后续回测代码的规格合同。
+本文件冻结 `原始立花义正交易法 v0.1` 与 `Tachibana Position Management v0.1` 的最小定义，并作为后续回测代码的规格合同。2026-06-25 起，本文件必须受 [tachibana-part1-3-detail-calibration.md](./tachibana-part1-3-detail-calibration.md) 与 [tachibana-part4-pm-annotations-v0.1.md](./tachibana-part4-pm-annotations-v0.1.md) 的细节校勘约束。
 
-当前阶段已经结束“大面积阅读/提取”主线。后续只有在规则歧义、事实冲突或字段无法落地时，才回查原书关键页与月度交易谱。
+当前阶段不再把昨天的回测报告视为完整定版。part4 交易谱回放可以保留，但 part1-3 对记录方式、下单纪律、分批、锁单、母单和工具系统的说明，必须反向修正本规格。
 
 本文件不是 A 股适配版，不引入周线、月线、多周期系统，也不修改 MALF 主定义。
 
@@ -15,10 +15,13 @@
 1. `data/pioneer-1975-1976/source-images/` 下的 24 张月度交易谱截图
 2. 原始月度交易谱 PDF
 3. `data/pioneer-1975-1976/json/` 下的重建 JSON
-4. 章节原文 PDF / 图片页
-5. OCR 文本，仅作检索辅助
+4. 用户挑出的规则页组：`Z:\market-life-cycle\立花义正交易法-part1-3`
+5. 章节原文 PDF / 图片页
+6. OCR 文本，仅作检索辅助
 
 所有 `trade_raw`、`position_raw` 的方向语义只能标为“我们的抽象解释”，不能冒充原文。回测实现必须保留原始字段与解释字段的分离。
+
+交易事实以 24 张交易谱截图为最高依据；记录方法、下单纪律、分批、锁单、母单等规则定义，以用户挑出的 part1-3 页组与章节原文页为优先依据。
 
 ## 原始交易法定义
 
@@ -30,7 +33,7 @@
 |---|---|
 | 标的 | Pioneer 1975-1976 月度交易谱 |
 | 级别 | 日线 |
-| 交易单位 | 交易谱手数；日本改交易规则前一手为 1000 股，v0.1 回测先以“价格点 × 手数”列账。 |
+| 交易单位 | 交易谱记录手数/单位；part1-3 说明早期股票交易单位进入 1000 股口径，part4 又记录 PIONEER 自 1976-09-21 起交易单位改为 100 股。v0.1 回测先以 `point_hand = 价格点 × 记录手数/单位` 列账，资金层必须后续按日期乘交易单位，不得全样本统一乘 1000。 |
 | 价格 | 每日收盘价、交易价 |
 | 交易记录 | 月度 JSON 中的 `trade_raw`、`position_raw` |
 | 回测目标 | 复现并解释原始立花法的动作和仓位状态，不追求生成可交易收益曲线 |
@@ -49,19 +52,31 @@
 
 因此，任何后续自动信号或 MALF 接入都不得使用交易行同日 `close_price` 来解释该行交易发生原因。PM 状态回放可以在成交日更新库存；绩效回测可以在成交后用同日收盘价盯市。
 
+part1-3 还要求以下执行纪律进入规格：
+
+| 纪律 | v0.1 定义 |
+|---|---|
+| 市价优先 | 除特殊练习情形外，基本不使用限价；限价下单容易引入贪婪和盘中情绪。 |
+| 不打听盘中走势 | 不打电话询问当天行情或成交价；成交价从第二天报纸补抄。 |
+| 不盘中追逐 | 最差的是盘中受行情刺激临时下单。 |
+| 开盘前下单 | 若要交易，9 点以前下单；开盘成交后再通过报纸记录。 |
+
 ### 交易谱记号语义
 
 立花交易谱的横杠不是普通负号。v0.1 采用以下记号语义：
 
 | 原始写法 | v0.1 解释 |
 |---|---|
-| `—5` | 买入 5 张，增加多头或减少空头。 |
-| `5—` | 卖出 5 张，增加空头或减少多头。 |
-| `10—` | 未平仓为空头 10 张。 |
-| `—5` | 未平仓为多头 5 张。 |
-| `10—5` | 未平仓同时包含空头 10 张、多头 5 张。 |
+| `—5` 作为买卖记录 | 买入 5 张，增加多头或减少空头。 |
+| `5—` 作为买卖记录 | 卖出 5 张，增加空头或减少多头。 |
+| `—5` 作为未平仓 | 多头 5 张；真实股数需按当日交易单位换算。 |
+| `10—` 作为未平仓 | 空头 10 张；真实股数需按当日交易单位换算。 |
+| `10—5` 作为未平仓 | 同时包含空头 10 张、多头 5 张。 |
+| `—2 (600日圆)` | 以 600 日圆买 2 张；真实股数需按当时交易单位换算。 |
 
 因此，`position_raw` 中横杠左侧映射为 `gross_short`，横杠右侧映射为 `gross_long`。例如 `2—20` 应解析为 `gross_short = 2`、`gross_long = 20`。这条规则优先于早期“左侧/右侧”抽象描述。
+
+`trade_raw` 与 `position_raw` 必须分离：同一个横杠写法在“买卖栏”表示当日交易动作，在“未平仓栏”表示库存状态。回测不得把 `10—2` 简化为净空 8 手。
 
 ### 核心动作
 
@@ -75,6 +90,7 @@
 | `exit_on_rhythm_failure` | 节奏失效或仓位逻辑不成立时退出。 | 退出事实可自动识别，原因需人工标注。 |
 | `reversal_flip` | 平掉原方向后切换方向。 | 可通过清仓前后方向变化候选识别，最终需人工确认。 |
 | `inventory_rebalance` | 围绕双侧库存、中心单、加码单、均价进行调整。 | 可自动维护库存，动作语义需人工标注。 |
+| `reverse_probe_lock` | 为维持母单、测试反向走势或安定部位而建立的小反向单。 | 只能由双侧库存生成候选，目的需人工标注。 |
 | `wait_no_action` | 主动等待，不因无交易而硬生成信号。 | 可自动生成日级状态，等待原因不自动推断。 |
 
 ### 方法原则
@@ -85,7 +101,10 @@
 | `active_waiting` | 等待是交易动作的一部分。 | 无交易日输出 `wait_no_action`，不等同于无规则。 |
 | `accept_and_correct` | 错误后通过清仓、减仓、重试恢复秩序。 | `clear` 后必须允许新交易段重新开始。 |
 | `anti_prediction_first` | 不把观点、预测或广告式信息作为回测信号。 | v0.1 不接入新闻、基本面、主观预测。 |
-| `profit_protection` | 保护利润和账户稳定优先于漂亮预测。 | 分批退出、锁单候选、清仓可作为利润保护动作候选。 |
+| `profit_protection` | 保护利润和账户稳定优先于漂亮预测。 | 分批退出、锁单候选、清仓可作为利润保护动作候选，但不能自动定论。 |
+| `fixed_mode_training` | 先固定标的、工具和分批模式，反复训练执行能力。 | v0.1 不把立花法简化为单次信号。 |
+| `avoid_intraday_impulse` | 不因盘中涨跌、消息、询价而改变当日操作。 | 回测不能生成盘中信号。 |
+| `single_focus` | 先专心熟悉标的；跨标的锁单或价差会分散精力。 | A 股适配版先做少数标的，不做全市场信号扫描。 |
 
 ## Position Management v0.1
 
@@ -98,11 +117,12 @@
 | `center_position` | 当前交易段的仓位骨架，代表交易者愿意围绕其继续加减、保护或收束的核心库存。 | 不能纯自动确认；由人工标注或强样本指定，自动规则只能生成 `center_candidate`。 | 写入 `center_side`、`center_size`，作为区分 `add_on`、`reduce_add_on`、`reduce_center` 的前提。 |
 | `add_on` | 围绕已存在中心单候选发生的同向库存扩张。 | 同侧库存增加，且当前交易段已有 `center_position` 或 `center_candidate`。 | 增加 `add_on_size`；若扩张明显超过前序节奏，触发 `scale_alert` 候选。 |
 | `gross_long/gross_short` | 分别保存多头与空头总库存的底层事实字段。 | 每个有 `position_raw` 的交易日解析更新；无交易日沿用上一有效库存。 | `position_raw` 横杠右侧为 `gross_long`，横杠左侧为 `gross_short`。 |
-| `lock_candidate` | 同时存在左右两侧库存时的锁单候选，不等于正式锁单。 | `gross_long > 0` 且 `gross_short > 0`。 | `lock_status = candidate`，`lock_candidate_size = min(gross_long, gross_short)`。 |
+| `lock_candidate` | 同时存在左右两侧库存时的锁单候选，不等于正式锁单。锁单目的可能是反向测试、维持母单、利润锁定、反手过渡、失败补救或类价差。 | `gross_long > 0` 且 `gross_short > 0`。 | `lock_status = candidate`，`lock_candidate_size = min(gross_long, gross_short)`，`lock_purpose = unknown`。 |
 | `unlock` | 双侧库存解除一侧，变回单侧库存。 | 前一状态为双侧库存，当前状态只有一侧库存大于 0。 | `lock_status = released`，保留剩余单侧库存，交易段不必自动结束。 |
 | `clear` | 左右两侧库存全部归零。 | `gross_long = 0` 且 `gross_short = 0`。 | 输出 `pm_action = clear`，随后必须执行 `reset_after_clear`。 |
 | `reset_after_clear` | 清仓后旧交易段终止，中心单、加码单、锁单候选全部失效。 | 每次 `clear` 后自动执行。 | 递增下一交易段编号；清空 `center_side`、`center_size`、`add_on_size`、`lock_candidate_size`。 |
 | `inventory_seed` | 清仓后或月末留下的新段初始库存，可能发展为下一段中心单候选。 | 清仓后的首次非零库存，或跨月延续的非零库存。 | 开启或延续新 `segment_id`，写入 `open_center` 候选但不自动确认中心单。 |
+| `mother_position` | 长时间维持、被保护、可围绕其加减或锁单的母单/核心库存。 | 不能自动确认；通常需要交易谱上下文和书页解释。 | 可作为 `center_position` 的更高层人工标注。 |
 
 ### 状态字段
 
@@ -119,6 +139,8 @@
 | `average_price_short` | number/null | 空头库存均价。 | 需要交易价完整时计算。 |
 | `lock_candidate_size` | number | 双侧同时存在时的锁单候选规模。 | `min(gross_long, gross_short)`。 |
 | `lock_status` | enum | `none / candidate / confirmed / released`。 | v0.1 默认只能到 `candidate`，`confirmed` 需书页校勘。 |
+| `lock_purpose` | enum | `reverse_probe / mother_position_protection / profit_lock / reversal_bridge / failure_repair / spread_like / unknown`。 | 默认 `unknown`；必须人工标注。 |
+| `mother_position_size` | number/null | 母单候选数量。 | 人工标注。 |
 | `pm_action` | enum | 仓位动作。 | 由状态转移生成，人工可覆盖。 |
 | `scale_alert` | boolean | 加码尺度警戒。 | v0.1 用候选规则触发，阈值后续校验。 |
 | `exit_mode` | enum | `none / one_shot_clear / staged_distribution / unlock_then_clear`。 | 由库存收缩路径生成。 |
@@ -134,6 +156,7 @@
 | `reduce_center` | 缩小中心单本身。 | 需人工确认。 |
 | `rebalance` | 双侧或复杂库存调整。 | 候选自动化。 |
 | `lock_candidate` | 同时持有双侧库存，可能是锁单。 | 可自动识别候选。 |
+| `reverse_probe_lock` | 小反向单测试行情、安定部位或维持母单。 | 只可人工确认。 |
 | `unlock` | 双侧库存解除一侧。 | 可自动识别。 |
 | `clear` | 所有库存归零。 | 可自动识别。 |
 | `reset_after_clear` | 清仓后旧交易段结束，中心单与加码单清空。 | 必须自动执行。 |
@@ -158,7 +181,8 @@
 | `preserve_dual_inventory` | 双侧库存必须保存为 `gross_long/gross_short`，不能压成净仓位。 | [1976-04](../tachibana/monthly/1976-04.md)、[1976-05](../tachibana/monthly/1976-05.md) |
 | `reset_after_clear` | 一旦 `gross_long = 0` 且 `gross_short = 0`，旧交易段结束。 | [1976-03](../tachibana/monthly/1976-03.md)、[1976-11](../tachibana/monthly/1976-11.md) |
 | `center_then_add_on` | 若已有中心单候选，同向扩张拆为中心单与加码单。 | [1976-10](../tachibana/monthly/1976-10.md)、[1976-12](../tachibana/monthly/1976-12.md) |
-| `lock_requires_confirmation` | 双侧库存只能先标 `lock_candidate`，不得自动定论为锁单。 | [1976-04](../tachibana/monthly/1976-04.md) |
+| `lock_requires_confirmation` | 双侧库存只能先标 `lock_candidate`，不得自动定论为正式锁单、利润保护或反手。 | [tachibana-part1-3-detail-calibration.md](./tachibana-part1-3-detail-calibration.md)、[tachibana-part4-pm-annotations-v0.1.md](./tachibana-part4-pm-annotations-v0.1.md)、[1976-04](../tachibana/monthly/1976-04.md) |
+| `lock_purpose_manual` | 锁单目的必须人工标注；候选包括反向测试、维持母单、利润锁定、反手过渡、失败补救、类价差。part4 已对 S001、S004、S005、S008 等段给出首轮人工标注。 | [tachibana-part1-3-detail-calibration.md](./tachibana-part1-3-detail-calibration.md)、[tachibana-part4-pm-annotations-v0.1.md](./tachibana-part4-pm-annotations-v0.1.md) |
 | `allow_unlock_then_clear` | 双侧库存解除一侧后，可继续单侧持有，再最终清仓。 | [1976-05](../tachibana/monthly/1976-05.md) |
 | `allow_one_shot_clear` | 极端仓位或节奏失败时允许一次性清仓。 | [1976-11](../tachibana/monthly/1976-11.md) |
 | `allow_staged_distribution` | 大仓位推进后允许分批退出，再最终清仓。 | [1976-12](../tachibana/monthly/1976-12.md) |
@@ -179,9 +203,10 @@
 | 输入 | 用途 |
 |---|---|
 | 月度截图 | 校验 JSON 与关键交易事实。 |
+| part1-3 校勘页组 | 校验记录格式、下单纪律、工具系统、分批、锁单、母单等规则。 |
 | 章节原文锚点 | 只在动作语义或锁单确认有歧义时回查。 |
 | MALF 快照 | 提供 `wave / range / break / progress / probability` 背景。 |
-| 人工标注表 | 标注中心单、动作原因、锁单确认、节奏失败等非自动字段。 |
+| 人工标注表 | 标注中心单、母单、动作原因、锁单确认、锁单目的、节奏失败等非自动字段；首轮见 `data/pioneer-1975-1976/annotations/part4-pm-annotations-v0.1.json`。 |
 
 ## 回测输出
 
@@ -206,8 +231,10 @@ v0.1 回测输出不是单一收益曲线，而是“交易事实 + 方法解释
 | `method_action` | Method 动作代码。 |
 | `pm_action` | PM 动作代码。 |
 | `center_side` / `center_size` | 中心单候选。 |
+| `mother_position_size` | 母单候选数量，默认空，需人工标注。 |
 | `add_on_size` | 加码单候选。 |
 | `lock_status` / `lock_candidate_size` | 锁单候选状态。 |
+| `lock_purpose` | 锁单目的，默认 `unknown`，需人工标注。 |
 | `exit_mode` | 退出模式。 |
 | `scale_alert` | 加码尺度警戒。 |
 | `malf_context` | 可选 MALF 背景。 |
@@ -241,14 +268,17 @@ v0.1 回测输出不是单一收益曲线，而是“交易事实 + 方法解释
 | 识别解锁候选 | 双侧库存转为单侧库存。 |
 | 识别一次性清仓与分批退出路径 | 根据库存收缩序列生成 `exit_mode` 候选。 |
 | 生成等待日 | 无交易但保留价格与持仓状态。 |
+| 生成 `point_hand` 绩效 | 价格点 × 记录手数/单位；资金层金额需按日期/交易单位表换算。 |
 
 ### v0.1 必须人工标注
 
 | 项 | 原因 |
 |---|---|
 | `center_position` 最终确认 | 不能仅凭数值自动推断“中心单”。 |
+| `mother_position` 最终确认 | 母单是被维持和保护的核心库存，需要交易上下文。 |
 | `method_action` 的原因 | 试探、回撤、节奏失败、利润保护需要语境。 |
 | `lock_status = confirmed` | 双侧库存不等于正式锁单。 |
+| `lock_purpose` | 双侧库存可能是反向测试、维持母单、利润锁定、反手过渡、失败补救或类价差。 |
 | `profit_protection` 最终判断 | 分批退出可能是利润保护，也可能是风险收束。 |
 | `reversal_flip` 最终确认 | 需要区分清仓后新段、普通反向库存和真正反手。 |
 | MALF 背景解释 | MALF 只提供结构，不自动解释交易者意图。 |
@@ -259,7 +289,7 @@ v0.1 回测输出不是单一收益曲线，而是“交易事实 + 方法解释
 |---|---|
 | A 股涨跌停、T+1、印花税、滑点 | 属于 A 股适配版。 |
 | 选股规则 | 当前只覆盖 Pioneer 单标的。 |
-| 资金曲线和真实账户杠杆 | 原始资料不足以稳定定义资金基数。 |
+| 资金曲线和真实账户杠杆 | 原始资料不足以稳定定义资金基数；真实股票金额需在 `point_hand` 外按日期交易单位换算。 |
 | 心理状态自动化 | 克制、认错、去虚荣只能作为人工解释标签。 |
 | 周线/月线结构 | 当前冻结为日线。 |
 | 自动交易信号生成 | 本阶段目标是复现和解释，不是部署策略。 |

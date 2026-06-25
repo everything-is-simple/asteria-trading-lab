@@ -1,0 +1,259 @@
+{
+  "version": "v0.1",
+  "created_at": "2026-06-25",
+  "source": "Z:\\market-life-cycle\\立花义正交易法-part4",
+  "scope": "Manual PM annotations from part4 live trade records, calibrated by part1-3 rules.",
+  "unit_policy": {
+    "pnl_unit": "point_hand = execution price point * recorded hands/units",
+    "date_dependent_share_multiplier": true,
+    "do_not_apply_uniform_1000_multiplier": true,
+    "events": [
+      {
+        "date": "1976-09-21",
+        "description": "Book record states Pioneer trading unit changed to 100 shares from this date."
+      }
+    ]
+  },
+  "annotation_fields": [
+    "lock_purpose",
+    "mother_position",
+    "add_on",
+    "reverse_probe",
+    "risk_tags"
+  ],
+  "major_trade_annotations": [
+    {
+      "major_trade_id": "S001",
+      "source_pages": [
+        "247-264",
+        "274-281"
+      ],
+      "dominant_interpretation": "failed_short_to_long_mother_building_with_reverse_probes",
+      "mother_position": {
+        "side": "long",
+        "status": "confirmed_by_book_commentary",
+        "size_path": [
+          {
+            "date": "1975-05-01",
+            "gross_long": 10
+          },
+          {
+            "date": "1975-05-30",
+            "gross_long": 15
+          },
+          {
+            "date": "1975-05-31",
+            "gross_long": 20
+          },
+          {
+            "date": "1975-06-09",
+            "gross_long": 30
+          },
+          {
+            "date": "1975-06-11",
+            "gross_long": 35
+          },
+          {
+            "date": "1975-06-13",
+            "gross_long": 40
+          }
+        ]
+      },
+      "lock_purpose": [
+        "reverse_probe",
+        "mother_position_protection",
+        "failure_repair"
+      ],
+      "reverse_probe_ranges": [
+        {
+          "start": "1975-02",
+          "end": "1975-03",
+          "note": "Early-Feb reverse test orders while sensing prior direction was wrong."
+        },
+        {
+          "start": "1975-05-15",
+          "end": "1975-06-06",
+          "note": "Book states these small trades are test orders and not connected to the mother position."
+        }
+      ],
+      "add_on": {
+        "side": "long",
+        "status": "confirmed_by_book_commentary",
+        "note": "Mother position was expanded from 10 to 40 units before the delayed full exit."
+      },
+      "risk_tags": [
+        "hesitation_on_1975_01_27",
+        "delayed_full_exit",
+        "mixed_inventory_must_not_be_netted"
+      ],
+      "notes": [
+        "S001 should not be read as a clean single-direction system trade; it is the main apprenticeship sequence in which mother position, test orders, locks, and failures are visible.",
+        "The algorithmic segment direction is only a numeric summary and must not override the book commentary."
+      ]
+    },
+    {
+      "major_trade_id": "S004",
+      "source_pages": [
+        "284-285"
+      ],
+      "dominant_interpretation": "weak_october_failure_repair_lock_then_clear",
+      "mother_position": {
+        "side": "unknown",
+        "status": "not_confirmed"
+      },
+      "lock_purpose": [
+        "failure_repair"
+      ],
+      "reverse_probe_ranges": [
+        {
+          "start": "1975-10-25",
+          "end": "1975-10-28",
+          "note": "Book commentary calls the -2/-2/-2 lock sequence foolish and hard to explain."
+        }
+      ],
+      "add_on": {
+        "side": "long",
+        "status": "not_confirmed"
+      },
+      "risk_tags": [
+        "bad_lock_habit",
+        "low_execution_quality"
+      ],
+      "notes": [
+        "Do not label this lock as normal profit protection. The book treats it as a poor-quality lock."
+      ]
+    },
+    {
+      "major_trade_id": "S005",
+      "source_pages": [
+        "284-285"
+      ],
+      "dominant_interpretation": "standard_staged_long_method_with_small_lock",
+      "mother_position": {
+        "side": "long",
+        "status": "candidate",
+        "size_path": [
+          {
+            "raw": "-2 -> -5 -> -10 -> -15 -> -20"
+          }
+        ]
+      },
+      "lock_purpose": [
+        "reverse_probe",
+        "mother_position_protection"
+      ],
+      "reverse_probe_ranges": [
+        {
+          "raw": "2-20",
+          "note": "Small opposite-side inventory against a larger long inventory."
+        }
+      ],
+      "add_on": {
+        "side": "long",
+        "status": "confirmed_by_sequence"
+      },
+      "risk_tags": [],
+      "notes": [
+        "This sequence resembles the stated staged method: -2, -5, -10, -20, then lock/restore/clear."
+      ]
+    },
+    {
+      "major_trade_id": "S008",
+      "source_pages": [
+        "301-309"
+      ],
+      "dominant_interpretation": "long_mother_position_protected_by_reverse_probe_lock",
+      "mother_position": {
+        "side": "long",
+        "status": "confirmed_by_book_commentary",
+        "comfortable_inventory_examples": [
+          "2-20"
+        ]
+      },
+      "lock_purpose": [
+        "reverse_probe",
+        "mother_position_protection"
+      ],
+      "reverse_probe_ranges": [
+        {
+          "start": "1976-04",
+          "end": "1976-05",
+          "note": "Book explicitly says these locks are reverse-test-like orders, not average-cost lowering, profit lock, or reversal bridge."
+        }
+      ],
+      "add_on": {
+        "side": "long",
+        "status": "candidate"
+      },
+      "risk_tags": [
+        "lock_is_manual_purpose_not_numeric_fact"
+      ],
+      "notes": [
+        "Gross dual inventory remains a lock_candidate in code, but book commentary supports lock_purpose=reverse_probe plus mother_position_protection for this area."
+      ]
+    },
+    {
+      "major_trade_id": "S013",
+      "source_pages": [
+        "317-320"
+      ],
+      "dominant_interpretation": "post_unit_change_experimental_long_scale_in",
+      "unit_context": "post_1976_09_21_100_share_unit_experiment",
+      "mother_position": {
+        "side": "long",
+        "status": "candidate"
+      },
+      "lock_purpose": [],
+      "reverse_probe_ranges": [],
+      "add_on": {
+        "side": "long",
+        "status": "confirmed_by_sequence",
+        "note": "Many small buys after the unit change culminate in a large one-shot clear at 200-."
+      },
+      "risk_tags": [
+        "post_unit_change",
+        "experimental_small_unit_averaging",
+        "scale_alert",
+        "winner_but_not_clean_template"
+      ],
+      "notes": [
+        "This is a profitable and decisive trade in the ledger, but part4 commentary frames the late-1976 style as an experiment with smaller units and too many orders.",
+        "Do not multiply this segment by the old 1000-share unit without a date-dependent unit table."
+      ]
+    },
+    {
+      "major_trade_id": "S015",
+      "source_pages": [
+        "317-320"
+      ],
+      "dominant_interpretation": "post_unit_change_experimental_short_scale_in_with_large_loss",
+      "unit_context": "post_1976_09_21_100_share_unit_experiment",
+      "mother_position": {
+        "side": "short",
+        "status": "candidate"
+      },
+      "lock_purpose": [],
+      "reverse_probe_ranges": [
+        {
+          "start": "1976-11-19",
+          "end": "1976-11-25",
+          "note": "Small long probe is cleared before the short campaign starts."
+        }
+      ],
+      "add_on": {
+        "side": "short",
+        "status": "confirmed_by_sequence"
+      },
+      "risk_tags": [
+        "post_unit_change",
+        "over_frequent_averaging",
+        "scale_alert",
+        "large_loss",
+        "not_standard_template"
+      ],
+      "notes": [
+        "Part4 says late-1976 orders became too frequent after the 100-share unit change; treat this as an experimental failure sample, not a clean original-method template."
+      ]
+    }
+  ]
+}

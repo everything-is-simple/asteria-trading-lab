@@ -17,19 +17,21 @@
 5. [docs/tachibana/index/MALF-立花映射总表.md](docs/tachibana/index/MALF-%E7%AB%8B%E8%8A%B1%E6%98%A0%E5%B0%84%E6%80%BB%E8%A1%A8.md)
 6. [docs/tachibana/index/Tachibana-Method-雏形.md](docs/tachibana/index/Tachibana-Method-%E9%9B%8F%E5%BD%A2.md)
 7. [docs/tachibana/index/Tachibana-Position-Management-雏形.md](docs/tachibana/index/Tachibana-Position-Management-%E9%9B%8F%E5%BD%A2.md)
-8. [docs/backtest-spec/original-tachibana-method-v0.1.md](docs/backtest-spec/original-tachibana-method-v0.1.md)
-9. [docs/backtest-spec/original-tachibana-v0.1-statistics-report.md](docs/backtest-spec/original-tachibana-v0.1-statistics-report.md)
-10. [docs/backtest-spec/original-tachibana-v0.1-performance-report.md](docs/backtest-spec/original-tachibana-v0.1-performance-report.md)
-11. [docs/backtest-spec/original-tachibana-v0.1-major-trades-report.md](docs/backtest-spec/original-tachibana-v0.1-major-trades-report.md)
-12. [docs/backtest-spec/original-tachibana-v0.1-quant-report.md](docs/backtest-spec/original-tachibana-v0.1-quant-report.md)
-13. [docs/backtest-spec/original-tachibana-v0.1-source-data-audit.md](docs/backtest-spec/original-tachibana-v0.1-source-data-audit.md)
-14. [docs/tachibana/index/Tachibana-A股适配版-雏形.md](docs/tachibana/index/Tachibana-A%E8%82%A1%E9%80%82%E9%85%8D%E7%89%88-%E9%9B%8F%E5%BD%A2.md)
+8. [docs/backtest-spec/tachibana-part1-3-detail-calibration.md](docs/backtest-spec/tachibana-part1-3-detail-calibration.md)
+9. [docs/backtest-spec/tachibana-part4-pm-annotations-v0.1.md](docs/backtest-spec/tachibana-part4-pm-annotations-v0.1.md)
+10. [docs/backtest-spec/original-tachibana-method-v0.1.md](docs/backtest-spec/original-tachibana-method-v0.1.md)
+11. [docs/backtest-spec/original-tachibana-v0.1-statistics-report.md](docs/backtest-spec/original-tachibana-v0.1-statistics-report.md)
+12. [docs/backtest-spec/original-tachibana-v0.1-performance-report.md](docs/backtest-spec/original-tachibana-v0.1-performance-report.md)
+13. [docs/backtest-spec/original-tachibana-v0.1-major-trades-report.md](docs/backtest-spec/original-tachibana-v0.1-major-trades-report.md)
+14. [docs/backtest-spec/original-tachibana-v0.1-quant-report.md](docs/backtest-spec/original-tachibana-v0.1-quant-report.md)
+15. [docs/backtest-spec/original-tachibana-v0.1-source-data-audit.md](docs/backtest-spec/original-tachibana-v0.1-source-data-audit.md)
+16. [docs/tachibana/index/Tachibana-A股适配版-雏形.md](docs/tachibana/index/Tachibana-A%E8%82%A1%E9%80%82%E9%85%8D%E7%89%88-%E9%9B%8F%E5%BD%A2.md)
 
 ## 当前状态
 
 - `1975`：全年研究主线已较完整
 - `1976`：全年事实骨架已建立，`1976-03/04/05/10/11/12` 已部分精读
-- 近期目标：原始立花法回测规格
+- 近期目标：依据 part1-3 细节校勘与 part4 交易谱说明，修订原始立花法回测规格、复杂段 PM 标注与报告口径
 - 远期目标：A 股适配版与回测报告
 
 ## 目录说明

@@ -3,6 +3,8 @@
 - [立花研究主线](./tachibana/README.md)
 - [A 股规则参考](./a-share/reference/)
 - [回测证据裁决规则](./backtest-spec/evidence-precedence.md)
+- [立花义正交易法 part1-3 细节校勘](./backtest-spec/tachibana-part1-3-detail-calibration.md)
+- [立花义正 part4 交易谱 PM 标注](./backtest-spec/tachibana-part4-pm-annotations-v0.1.md)
 - [原始立花义正交易法 v0.1 回测规格](./backtest-spec/original-tachibana-method-v0.1.md)
 - [原始立花法 v0.1 回测统计报告](./backtest-spec/original-tachibana-v0.1-statistics-report.md)
 - [原始立花法 v0.1 正规绩效回测报告](./backtest-spec/original-tachibana-v0.1-performance-report.md)

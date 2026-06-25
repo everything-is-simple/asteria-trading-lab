@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import sys
 import unittest
@@ -78,6 +79,7 @@ class MinimalBacktestTest(unittest.TestCase):
         self.assertAlmostEqual(metrics["trade_statistics"]["expectancy_per_trade"], 5345.8)
         self.assertEqual(metrics["trade_statistics"]["best_trade"]["segment_id"], "S013")
         self.assertAlmostEqual(metrics["trade_statistics"]["best_trade"]["pnl"], 41140.0)
+        self.assertIn("1976-09-21", metrics["assumptions"]["shares_per_hand_note"])
 
     def test_major_trade_report_keeps_1976_11_trade_direction_correct(self) -> None:
         files = sorted(DATA_DIR.glob("[0-9][0-9][0-9][0-9]-[0-9][0-9].json"))
@@ -156,6 +158,18 @@ class MinimalBacktestTest(unittest.TestCase):
         self.assertEqual(trade["trade_ledger"][-1]["trade_raw"], "200 —")
         self.assertAlmostEqual(trade["trade_ledger"][-1]["cumulative_realized_pnl"], 41140.0)
         self.assertTrue((report_dir / "S013.md").exists())
+
+    def test_part4_annotations_capture_lock_purpose_and_unit_policy(self) -> None:
+        path = ROOT / "data" / "pioneer-1975-1976" / "annotations" / "part4-pm-annotations-v0.1.json"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        by_id = {item["major_trade_id"]: item for item in payload["major_trade_annotations"]}
+
+        self.assertTrue(payload["unit_policy"]["date_dependent_share_multiplier"])
+        self.assertEqual(payload["unit_policy"]["events"][0]["date"], "1976-09-21")
+        self.assertIn("mother_position_protection", by_id["S001"]["lock_purpose"])
+        self.assertIn("reverse_probe", by_id["S008"]["lock_purpose"])
+        self.assertEqual(by_id["S013"]["unit_context"], "post_1976_09_21_100_share_unit_experiment")
+        self.assertIn("over_frequent_averaging", by_id["S015"]["risk_tags"])
 
 
 if __name__ == "__main__":
