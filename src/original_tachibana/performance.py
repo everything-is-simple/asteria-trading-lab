@@ -218,7 +218,7 @@ def build_metrics(
 
     return {
         "assumptions": {
-            "unit_size": "1 hand = 1 unit in v0.1 PnL arithmetic",
+            "unit_size": "1 recorded unit = 1 arithmetic unit in v0.1 point-unit PnL",
             "shares_per_hand_note": SHARES_PER_HAND_NOTE,
             "transaction_cost": 0,
             "slippage": 0,

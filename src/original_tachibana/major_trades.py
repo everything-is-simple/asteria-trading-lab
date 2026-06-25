@@ -16,6 +16,15 @@ OPERATION_LABELS = {
     "buy_to_cover_short": "买入回补空",
 }
 
+PART4_ANNOTATION_PATH = Path("data/pioneer-1975-1976/annotations/part4-pm-annotations-v0.1.json")
+
+
+def load_part4_annotations(path: Path = PART4_ANNOTATION_PATH) -> dict[str, dict[str, Any]]:
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return {item["major_trade_id"]: item for item in payload.get("major_trade_annotations", [])}
+
 
 def build_major_trades(equity_rows: list[dict[str, Any]], metrics: dict[str, Any]) -> dict[str, Any]:
     segment_pnl = {row["segment_id"]: row for row in metrics["segment_pnl"]}
@@ -24,6 +33,7 @@ def build_major_trades(equity_rows: list[dict[str, Any]], metrics: dict[str, Any
         if row["segment_id"] is not None:
             rows_by_segment[row["segment_id"]].append(row)
 
+    annotations = load_part4_annotations()
     major_trades: list[dict[str, Any]] = []
     for segment in metrics["segment_pnl"]:
         segment_id = segment["segment_id"]
@@ -55,6 +65,7 @@ def build_major_trades(equity_rows: list[dict[str, Any]], metrics: dict[str, Any
                 "return_on_max_gross_notional": pnl / (max_gross * max(row["mark_price"] for row in rows)) if max_gross else 0,
                 "result": "win" if pnl > 0 else "loss" if pnl < 0 else "flat",
                 "source_months": sorted({row["date_key"][:7] for row in rows}),
+                "manual_annotations": annotations.get(segment_id),
             }
         )
 
@@ -136,10 +147,42 @@ def format_operations(operations: list[dict[str, Any]]) -> str:
         avg = operation.get("average_cost")
         avg_text = f", 均价 {avg:.2f}" if avg is not None else ""
         parts.append(
-            f"{label} {operation['quantity']}手 @ {operation['price']}{avg_text}, "
-            f"成交额点手 {operation['notional_point_hand']:.0f}, 实现 {pnl:.2f}"
+            f"{label} {operation['quantity']}单位 @ {operation['price']}{avg_text}, "
+            f"成交额点单位 {operation['notional_point_hand']:.0f}, 实现 {pnl:.2f}"
         )
     return "<br>".join(parts)
+
+
+def format_annotation_items(value: Any) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, list):
+        return ", ".join(format_annotation_items(item) for item in value) if value else "-"
+    if isinstance(value, dict):
+        parts = []
+        for key, item in value.items():
+            parts.append(f"{key}={format_annotation_items(item)}")
+        return "; ".join(parts) if parts else "-"
+    return str(value)
+
+
+def render_annotation_summary_rows(trades: list[dict[str, Any]]) -> list[str]:
+    rows = []
+    for trade in trades:
+        annotation = trade.get("manual_annotations")
+        if not annotation:
+            continue
+        rows.append(
+            "| {id} | {interpretation} | {mother} | {lock} | {add_on} | {risk} |".format(
+                id=trade["major_trade_id"],
+                interpretation=annotation.get("dominant_interpretation", "-"),
+                mother=format_annotation_items(annotation.get("mother_position")),
+                lock=format_annotation_items(annotation.get("lock_purpose")),
+                add_on=format_annotation_items(annotation.get("add_on")),
+                risk=format_annotation_items(annotation.get("risk_tags")),
+            )
+        )
+    return rows
 
 
 def render_markdown(report: dict[str, Any]) -> str:
@@ -152,9 +195,9 @@ def render_markdown(report: dict[str, Any]) -> str:
         "",
         "本报告按用户定义的“一大笔交易”统计：从第一笔开仓/加码开始，经过未平仓库存累积，直到库存归零平仓为止。总表只做索引；逐笔查账见 `original-tachibana-major-trades/` 下 15 份单笔报告。",
         "",
-        "记号语义：`—5` 表示买入 5 张并增加多头；`5—` 表示卖出 5 张并增加空头或减少多头；未平仓横杠左侧为空头，右侧为多头。",
+        "记号语义：`—5` 表示买入 5 记录单位并增加多头；`5—` 表示卖出 5 记录单位并增加空头或减少多头；未平仓横杠左侧为空头，右侧为多头。",
         "",
-        "单位说明：本报告按 `价格点 × 记录手数/单位` 展开；part4 记录 PIONEER 自 1976-09-21 起交易单位改为 100 股，资金层不得全样本统一乘 1000。",
+        "单位说明：本报告按 `价格点 × 记录单位` 展开；part4 记录 PIONEER 自 1976-09-21 起交易单位改为 100 股，资金层不得全样本统一乘 1000。",
         "",
         "## 总览",
         "",
@@ -206,7 +249,20 @@ def render_markdown(report: dict[str, Any]) -> str:
             "",
             "## 重点样本",
             "",
-            "S013 是 1976-10 到 1976-11 的大笔多头交易：`—10 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —20 / —50 / —102` 买入累积到多头 200 张，随后 `200 —` 卖出清仓，PnL 约 +41140 点手。详见单独报告。",
+            "S013 是 1976-10 到 1976-11 的大笔多头交易：`—10 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —20 / —50 / —102` 买入累积到多头 200 记录单位，随后 `200 —` 卖出清仓，PnL 约 +41140 点单位。详见单独报告。",
+            "",
+            "## Part4 PM 人工标注摘要",
+            "",
+            "| ID | 主解释 | 母单 | 锁单目的 | 加码 | 风险标签 |",
+            "|---|---|---|---|---|---|",
+        ]
+    )
+    annotation_rows = render_annotation_summary_rows(report["major_trades"])
+    lines.extend(annotation_rows if annotation_rows else ["| - | - | - | - | - | - |"])
+    lines.extend(
+        [
+            "",
+            "这些标注来自 `data/pioneer-1975-1976/annotations/part4-pm-annotations-v0.1.json`，用于把书页解释并列放在数值账本旁边；机器仍只把双侧库存自动标为 `lock_candidate`，不自动确认锁单目的。",
             "",
             "## 限制",
             "",
@@ -230,12 +286,12 @@ def render_single_trade_markdown(trade: dict[str, Any]) -> str:
         f"| 结束日期 | {trade['end_date']} |",
         f"| 方向 | {trade['direction']} |",
         f"| 成交行数 | {trade['trade_count']} |",
-        f"| 最大多头 | {trade['max_gross_long']} 手 |",
-        f"| 最大空头 | {trade['max_gross_short']} 手 |",
-        f"| PnL | {trade['pnl']:.2f} 点手 |",
+        f"| 最大多头 | {trade['max_gross_long']} 记录单位 |",
+        f"| 最大空头 | {trade['max_gross_short']} 记录单位 |",
+        f"| PnL | {trade['pnl']:.2f} 点单位 |",
         f"| 结果 | {trade['result']} |",
         "",
-        "单位说明：本报告按 `价格点 × 记录手数/单位` 展开；1976-09-21 前后股数乘数不同，本 v0.1 明细暂不换算真实股数金额。",
+        "单位说明：本报告按 `价格点 × 记录单位` 展开；1976-09-21 前后股数乘数不同，本 v0.1 明细暂不换算真实股数金额。",
         "",
         "## 逐笔成交流水",
         "",
@@ -255,6 +311,28 @@ def render_single_trade_markdown(trade: dict[str, Any]) -> str:
                 row_pnl=format_number(ledger["row_realized_pnl"], 2),
                 cum_pnl=format_number(ledger["cumulative_realized_pnl"], 2),
             )
+        )
+    annotation = trade.get("manual_annotations")
+    if annotation:
+        lines.extend(
+            [
+                "",
+                "## Part4 PM 人工标注",
+                "",
+                "| 字段 | 标注 |",
+                "|---|---|",
+                f"| 来源页 | {format_annotation_items(annotation.get('source_pages'))} |",
+                f"| 主解释 | {annotation.get('dominant_interpretation', '-')} |",
+                f"| 母单 | {format_annotation_items(annotation.get('mother_position'))} |",
+                f"| 锁单目的 | {format_annotation_items(annotation.get('lock_purpose'))} |",
+                f"| 反向测试区间 | {format_annotation_items(annotation.get('reverse_probe_ranges'))} |",
+                f"| 加码 | {format_annotation_items(annotation.get('add_on'))} |",
+                f"| 单位背景 | {annotation.get('unit_context', '-')} |",
+                f"| 风险标签 | {format_annotation_items(annotation.get('risk_tags'))} |",
+                f"| 说明 | {format_annotation_items(annotation.get('notes'))} |",
+                "",
+                "这一区块是书页解释层，不覆盖上方逐笔成交和 PnL 账本。",
+            ]
         )
     lines.extend(
         [

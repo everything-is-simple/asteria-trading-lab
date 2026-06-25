@@ -44,6 +44,6 @@ def main_for_segment(segment_id: str, argv: list[str] | None = None) -> int:
     trade = run_single_trade(segment_id, Path(args.data_dir), Path(args.out_dir), Path(args.report_dir))
     print(
         f"wrote {segment_id}: {trade['start_date']}..{trade['end_date']} "
-        f"pnl={trade['pnl']:.2f} point-hand report={Path(args.report_dir) / (segment_id + '.md')}"
+        f"pnl={trade['pnl']:.2f} point-unit report={Path(args.report_dir) / (segment_id + '.md')}"
     )
     return 0

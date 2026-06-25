@@ -3,7 +3,7 @@
 ## 口径
 
 - 样本：Pioneer 1975-1976 original Tachibana v0.1, 15 closed major trades
-- 单位：point-hand: execution price point × recorded hands/units, before any date-dependent share multiplier
+- 单位：point-unit: execution price point × recorded units, before any date-dependent share multiplier
 - 下单：previous available close_price from newspaper；pre-open market order on the next trading day
 - 成本：手续费 0，滑点 0
 - 说明：资金层需按日期/交易单位表换算；part4 记录 PIONEER 自 1976-09-21 起交易单位改为 100 股，不能把全样本金额统一乘 1000。胜率、夏普率、盈亏比、Profit Factor 等比率不受股数乘数影响。
@@ -12,7 +12,7 @@
 
 | 指标 | 数值 |
 |---|---:|
-| 净利润 | 80,187 点手 |
+| 净利润 | 80,187 点单位 |
 | 总收益率 | 16.99% |
 | CAGR | 8.17% |
 | 年化波动率 | 7.05% |
@@ -20,7 +20,7 @@
 | Sortino | 3.13 |
 | 最大回撤 | -4.12% |
 | 最大回撤区间 | 1976-12-02 至 1976-12-13 |
-| 资本基准 | 472,000 点手 |
+| 资本基准 | 472,000 点单位 |
 
 ## 交易统计
 
@@ -30,21 +30,21 @@
 | 盈利笔数 | 10 |
 | 亏损笔数 | 5 |
 | 胜率 | 66.67% |
-| 毛利润 Gross Profit | 85,737 点手 |
-| 毛亏损 Gross Loss | -5,550 点手 |
+| 毛利润 Gross Profit | 85,737 点单位 |
+| 毛亏损 Gross Loss | -5,550 点单位 |
 | Profit Factor | 15.45 |
-| 平均盈利 | 8,573.70 点手 |
-| 平均亏损 | -1,110.00 点手 |
+| 平均盈利 | 8,573.70 点单位 |
+| 平均亏损 | -1,110.00 点单位 |
 | 盈亏比 Payoff Ratio | 7.72 |
-| 单笔期望值 | 5,345.80 点手 |
-| 中位数单笔 | 700.00 点手 |
-| 单笔 PnL 标准差 | 10,865.82 点手 |
+| 单笔期望值 | 5,345.80 点单位 |
+| 中位数单笔 | 700.00 点单位 |
+| 单笔 PnL 标准差 | 10,865.82 点单位 |
 | 交易样本 Sharpe-like | 1.91 |
 | SQN | 1.91 |
 | 最大连续盈利 | 3 笔 |
 | 最大连续亏损 | 2 笔 |
-| 最佳交易 | S013 / 41,140 点手 |
-| 最差交易 | S015 / -2,200 点手 |
+| 最佳交易 | S013 / 41,140 点单位 |
+| 最差交易 | S015 / -2,200 点单位 |
 
 交易样本 Sharpe-like 只用于观察 15 笔大交易的离散程度；正式夏普率以上方日权益曲线 Sharpe 为准。
 
@@ -102,5 +102,5 @@
 ## 读法
 
 - 这份报告回答“十五大交易作为一个交易系统，量化统计如何”。
-- 查某一笔为什么赚亏，仍看 `docs/backtest-spec/original-tachibana-major-trades/Sxxx.md` 的逐笔成交价、手数、库存和实现 PnL。
-- 本 v0.1 不加入手续费、滑点、税费，也不把点手金额统一乘 1000；这些是后续日期依赖资金口径版本的工作。
+- 查某一笔为什么赚亏，仍看 `docs/backtest-spec/original-tachibana-major-trades/Sxxx.md` 的逐笔成交价、记录数量、库存和实现 PnL。
+- 本 v0.1 不加入手续费、滑点、税费，也不把点单位金额统一乘 1000；这些是后续日期依赖资金口径版本的工作。

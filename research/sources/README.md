@@ -19,9 +19,19 @@
 - `Z:\market-life-cycle\2012.(Japan)【立花义正】\台湾版-split`
 - `Z:\market-life-cycle\2012.(Japan)【立花义正】\你也能成为股票操作高手（立花义正）tw.pdf`
 - `Z:\market-life-cycle\2012.(Japan)【立花义正】\你也能成为股票操作高手（立花义正）tw_ocr_results`
+- `Z:\market-life-cycle\2012.(Japan)【立花义正】\24 张交易谱-截图-pioneer-trade-1975-1976-source`
+- `Z:\market-life-cycle\2012.(Japan)【立花义正】\1975-1976-24 张交易谱-截图`
+- `Z:\market-life-cycle\2012.(Japan)【立花义正】\立花义正交易法-part1-3`
+- `Z:\market-life-cycle\2012.(Japan)【立花义正】\立花义正交易法-part4`
 - `Z:\market-life-cycle\2012.(Japan)【立花义正】\丽花义正-交易谱（1975.01-1976.12）`
 - `Z:\market-life-cycle\2012.(Japan)【立花义正】\立花义正的操作法.doc`
 - `Z:\market-life-cycle\2012.(Japan)【立花义正】\立花义正的操作法.pdf`
+
+## 本轮校勘状态
+
+- 两个 1975-1976 交易谱截图目录与仓库 `data/pioneer-1975-1976/source-images/` 均为 24 张 JPG，SHA256 对照 `mismatch_count = 0`。
+- `立花义正交易法-part1-3` 用于校勘记录方式、下单时点、交易单位、分批、锁单、母单和工具系统。
+- `立花义正交易法-part4` 用于校勘 1975-1976 实战交易谱的部位管理标注与 PIONEER 交易单位变更。
 
 ## 后续纳入原则
 

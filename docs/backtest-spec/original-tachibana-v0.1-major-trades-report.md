@@ -4,9 +4,9 @@
 
 本报告按用户定义的“一大笔交易”统计：从第一笔开仓/加码开始，经过未平仓库存累积，直到库存归零平仓为止。总表只做索引；逐笔查账见 `original-tachibana-major-trades/` 下 15 份单笔报告。
 
-记号语义：`—5` 表示买入 5 张并增加多头；`5—` 表示卖出 5 张并增加空头或减少多头；未平仓横杠左侧为空头，右侧为多头。
+记号语义：`—5` 表示买入 5 记录单位并增加多头；`5—` 表示卖出 5 记录单位并增加空头或减少多头；未平仓横杠左侧为空头，右侧为多头。
 
-单位说明：本报告按 `价格点 × 记录手数/单位` 展开；part4 记录 PIONEER 自 1976-09-21 起交易单位改为 100 股，资金层不得全样本统一乘 1000。
+单位说明：本报告按 `价格点 × 记录单位` 展开；part4 记录 PIONEER 自 1976-09-21 起交易单位改为 100 股，资金层不得全样本统一乘 1000。
 
 ## 总览
 
@@ -55,7 +55,20 @@
 
 ## 重点样本
 
-S013 是 1976-10 到 1976-11 的大笔多头交易：`—10 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —20 / —50 / —102` 买入累积到多头 200 张，随后 `200 —` 卖出清仓，PnL 约 +41140 点手。详见单独报告。
+S013 是 1976-10 到 1976-11 的大笔多头交易：`—10 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —2 / —20 / —50 / —102` 买入累积到多头 200 记录单位，随后 `200 —` 卖出清仓，PnL 约 +41140 点单位。详见单独报告。
+
+## Part4 PM 人工标注摘要
+
+| ID | 主解释 | 母单 | 锁单目的 | 加码 | 风险标签 |
+|---|---|---|---|---|---|
+| S001 | failed_short_to_long_mother_building_with_reverse_probes | side=long; status=confirmed_by_book_commentary; size_path=date=1975-05-01; gross_long=10, date=1975-05-30; gross_long=15, date=1975-05-31; gross_long=20, date=1975-06-09; gross_long=30, date=1975-06-11; gross_long=35, date=1975-06-13; gross_long=40 | reverse_probe, mother_position_protection, failure_repair | side=long; status=confirmed_by_book_commentary; note=Mother position was expanded from 10 to 40 units before the delayed full exit. | hesitation_on_1975_01_27, delayed_full_exit, mixed_inventory_must_not_be_netted |
+| S004 | weak_october_failure_repair_lock_then_clear | side=unknown; status=not_confirmed | failure_repair | side=long; status=not_confirmed | bad_lock_habit, low_execution_quality |
+| S005 | standard_staged_long_method_with_small_lock | side=long; status=candidate; size_path=raw=-2 -> -5 -> -10 -> -15 -> -20 | reverse_probe, mother_position_protection | side=long; status=confirmed_by_sequence | - |
+| S008 | long_mother_position_protected_by_reverse_probe_lock | side=long; status=confirmed_by_book_commentary; comfortable_inventory_examples=2-20 | reverse_probe, mother_position_protection | side=long; status=candidate | lock_is_manual_purpose_not_numeric_fact |
+| S013 | post_unit_change_experimental_long_scale_in | side=long; status=candidate | - | side=long; status=confirmed_by_sequence; note=Many small buys after the unit change culminate in a large one-shot clear at 200-. | post_unit_change, experimental_small_unit_averaging, scale_alert, winner_but_not_clean_template |
+| S015 | post_unit_change_experimental_short_scale_in_with_large_loss | side=short; status=candidate | - | side=short; status=confirmed_by_sequence | post_unit_change, over_frequent_averaging, scale_alert, large_loss, not_standard_template |
+
+这些标注来自 `data/pioneer-1975-1976/annotations/part4-pm-annotations-v0.1.json`，用于把书页解释并列放在数值账本旁边；机器仍只把双侧库存自动标为 `lock_candidate`，不自动确认锁单目的。
 
 ## 限制
 

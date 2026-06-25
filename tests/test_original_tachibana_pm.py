@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from original_tachibana.performance import run_performance
-from original_tachibana.major_trades import build_major_trades
+from original_tachibana.major_trades import build_major_trades, render_single_trade_markdown
 from original_tachibana.quant_report import build_quant_report
 from original_tachibana.audit_source_data import audit_files
 from original_tachibana.pm_state import parse_inventory, run_backtest
@@ -110,6 +110,12 @@ class MinimalBacktestTest(unittest.TestCase):
         self.assertEqual(november_trade["trade_ledger"][-1]["operations"][0]["operation"], "sell_long")
         self.assertEqual(november_trade["trade_ledger"][-1]["operations"][0]["quantity"], 200)
         self.assertAlmostEqual(november_trade["trade_ledger"][-1]["cumulative_realized_pnl"], 41140.0)
+        self.assertEqual(
+            november_trade["manual_annotations"]["unit_context"],
+            "post_1976_09_21_100_share_unit_experiment",
+        )
+        self.assertIn("winner_but_not_clean_template", november_trade["manual_annotations"]["risk_tags"])
+        self.assertIn("Part4 PM 人工标注", render_single_trade_markdown(november_trade))
 
     def test_quant_report_metrics_are_reproducible_for_major_trades(self) -> None:
         files = sorted(DATA_DIR.glob("[0-9][0-9][0-9][0-9]-[0-9][0-9].json"))
