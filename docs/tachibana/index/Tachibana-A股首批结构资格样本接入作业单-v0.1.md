@@ -617,6 +617,45 @@ $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-tradi
 
 该层仍禁止 `buy_signal / sell_signal / trade_accept / target_position / position_size / ashare_t1_action / limit_up_strategy`。即使后续人工把 `feasibility_status` 复核为 `executable`，也只能表示计划事件在制度事实下“执行可行性可记录”，不表示买入许可、卖出许可或目标仓位。
 
+## execution feasibility verdict merge 输出字段
+
+默认草案生成后，人工可以在独立目录中填写最小裁决 JSON，再走一次只读合流：
+
+```powershell
+$env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-feasibility-verdict-merge <execution-feasibility-verdict-dir> --method-pm-plan-dir <method-pm-plan-dir> --institution-fact-root Z:\asteria-trading-labs-data
+```
+
+人工复核文件只允许填写：
+
+- `ashare_sample_id`
+- `ts_code`
+- `feasibility_status`
+- `verdict_reason`
+- `blocked_reason`（可选）
+- `carry_forward_required`（可选）
+- `evidence_ref`（可选）
+
+其中 `feasibility_status` 只允许：
+
+- `not_evaluated`
+- `executable`
+- `constrained`
+- `blocked`
+- `carry_forward_required`
+
+系统态 `evidence_ready / blocked_by_fact_review` 不允许人工回填；`buy_signal / sell_signal / trade_accept / target_position / position_size / ashare_t1_action / limit_up_strategy` 仍然一律禁止。
+
+| 字段 | 含义 |
+|---|---|
+| `execution_feasibility_verdict_ready_count` | 合流成功的人工复核 verdict 数量。 |
+| `execution_feasibility_verdict_blocked_count` | 契约不合格、状态越界或代码不匹配而被阻断的 verdict 数量。 |
+| `unmatched_review_count` | 找不到对应人工复核文件的草案数量。 |
+| `execution_feasibility_verdicts` | 合流后的只读 `AShareExecutionFeasibilityVerdict`。 |
+| `verdict_source` | 从默认 `manual_review_required` 升级为 `manual_review`。 |
+| `next_action` | 通过时进入 `action:review_execution_feasibility_outcome`；阻断时回到 `action:review_execution_feasibility_verdicts`。 |
+
+该层的意义仍然是“人工记录执行可行性事实状态”，而不是“授予交易权”。即使人工把某条样本复核为 `executable`，也不等于 `trade_accept`，更不等于目标仓位、T+1 处理或涨跌停策略已经定义完成。
+
 ## Backtest Input readiness 输出字段
 
 `--audit-first-batch-backtest-input-readiness` 的输出应作为 Backtest Input 快照准备前的只读闸门：

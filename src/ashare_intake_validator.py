@@ -132,6 +132,22 @@ EXECUTION_FEASIBILITY_VERDICT_STATUSES = [
     "carry_forward_required",
     "blocked_by_fact_review",
 ]
+MANUAL_EXECUTION_FEASIBILITY_VERDICT_STATUSES = [
+    "not_evaluated",
+    "executable",
+    "constrained",
+    "blocked",
+    "carry_forward_required",
+]
+MANUAL_EXECUTION_FEASIBILITY_VERDICT_FIELDS = [
+    "ashare_sample_id",
+    "ts_code",
+    "feasibility_status",
+    "verdict_reason",
+    "blocked_reason",
+    "carry_forward_required",
+    "evidence_ref",
+]
 
 
 def audit_ashare_institution_fact_package(data_root: str | Path) -> dict[str, Any]:
@@ -965,6 +981,128 @@ def audit_first_batch_execution_feasibility_verdicts(
     }
 
 
+def audit_execution_feasibility_verdict_draft_contract(draft: dict[str, Any]) -> dict[str, Any]:
+    issues: list[str] = []
+    required_fields = ["ashare_sample_id", "ts_code", "feasibility_status", "verdict_reason"]
+    for field in required_fields:
+        if field not in draft:
+            issues.append(f"execution_feasibility_verdict_missing_field:{field}")
+
+    unexpected_fields = sorted(set(draft.keys()) - set(MANUAL_EXECUTION_FEASIBILITY_VERDICT_FIELDS))
+    for field in unexpected_fields:
+        issues.append(f"execution_feasibility_verdict_unexpected_field:{field}")
+
+    forbidden_fields = sorted(FORBIDDEN_FIELDS.intersection(draft.keys()))
+    for field in forbidden_fields:
+        issues.append(f"execution_feasibility_verdict_forbidden_field:{field}")
+
+    feasibility_status = draft.get("feasibility_status")
+    if feasibility_status not in MANUAL_EXECUTION_FEASIBILITY_VERDICT_STATUSES:
+        issues.append(f"execution_feasibility_verdict_invalid_status:{feasibility_status}")
+
+    verdict_reason = draft.get("verdict_reason")
+    if not isinstance(verdict_reason, list) or not verdict_reason:
+        issues.append("execution_feasibility_verdict_requires_verdict_reason")
+
+    blocked_reason = draft.get("blocked_reason")
+    if blocked_reason is not None and not isinstance(blocked_reason, list):
+        issues.append("execution_feasibility_verdict_requires_blocked_reason_list")
+
+    evidence_ref = draft.get("evidence_ref")
+    if evidence_ref is not None and not isinstance(evidence_ref, list):
+        issues.append("execution_feasibility_verdict_requires_evidence_ref_list")
+
+    carry_forward_required = draft.get("carry_forward_required")
+    if carry_forward_required is not None and not isinstance(carry_forward_required, bool):
+        issues.append("execution_feasibility_verdict_requires_carry_forward_required_boolean")
+
+    result = "pass" if not issues else "blocked"
+    return {
+        "result": result,
+        "next_action": "action:review_execution_feasibility_outcome"
+        if result == "pass"
+        else "action:review_execution_feasibility_verdicts",
+        "required_fields_checked": MANUAL_EXECUTION_FEASIBILITY_VERDICT_FIELDS,
+        "allowed_manual_statuses": MANUAL_EXECUTION_FEASIBILITY_VERDICT_STATUSES,
+        "issues": _unique_preserve_order(issues),
+    }
+
+
+def audit_first_batch_execution_feasibility_verdict_merge(
+    data_root: str | Path,
+    plan_dir: str | Path,
+    institution_fact_root: str | Path,
+    review_dir: str | Path,
+) -> dict[str, Any]:
+    draft_report = audit_first_batch_execution_feasibility_verdicts(data_root, plan_dir, institution_fact_root)
+    if draft_report["result"] != "pass":
+        return {
+            "result": "blocked",
+            "execution_feasibility_verdict_ready_count": 0,
+            "execution_feasibility_verdict_blocked_count": 0,
+            "unmatched_review_count": 0,
+            "execution_feasibility_verdicts": [],
+            "execution_feasibility_verdict_ready_items": [],
+            "execution_feasibility_verdict_blocked_items": [],
+            "unmatched_review_items": [],
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": draft_report["next_action"],
+            "issues": draft_report["issues"],
+            "execution_feasibility_verdict_drafts": draft_report,
+        }
+
+    review_index = _execution_feasibility_verdict_review_index(Path(review_dir))
+    ready_items: list[dict[str, Any]] = []
+    blocked_items: list[dict[str, Any]] = []
+    unmatched_items: list[dict[str, Any]] = []
+
+    for verdict in draft_report.get("execution_feasibility_verdicts", []):
+        sample_id = str(verdict.get("ashare_sample_id", ""))
+        review = review_index.get(sample_id)
+        if review is None:
+            unmatched_items.append(verdict)
+            continue
+        contract = audit_execution_feasibility_verdict_draft_contract(review)
+        if contract["result"] != "pass":
+            blocked_items.append(_execution_feasibility_verdict_blocked_item(verdict, review, contract))
+            continue
+        if review.get("ts_code") != verdict.get("ts_code"):
+            blocked_items.append(
+                _execution_feasibility_verdict_blocked_item(
+                    verdict,
+                    review,
+                    {
+                        "issues": ["execution_feasibility_verdict_ts_code_mismatch"],
+                        "next_action": "action:review_execution_feasibility_verdicts",
+                    },
+                )
+            )
+            continue
+        ready_items.append(_execution_feasibility_verdict_ready_item(verdict, review))
+
+    result = "pass" if ready_items and not blocked_items and not unmatched_items else "blocked"
+    return {
+        "result": result,
+        "execution_feasibility_verdict_ready_count": len(ready_items),
+        "execution_feasibility_verdict_blocked_count": len(blocked_items),
+        "unmatched_review_count": len(unmatched_items),
+        "execution_feasibility_verdicts": ready_items if result == "pass" else [],
+        "execution_feasibility_verdict_ready_items": ready_items,
+        "execution_feasibility_verdict_blocked_items": blocked_items,
+        "unmatched_review_items": unmatched_items,
+        "institution_rule_definition_allowed": False,
+        "signal_generation_allowed": False,
+        "backtest_execution_allowed": False,
+        "next_action": "action:review_execution_feasibility_outcome"
+        if result == "pass"
+        else "action:review_execution_feasibility_verdicts",
+        "issues": [] if result == "pass" else ["execution_feasibility_requires_matching_valid_manual_verdict"],
+        "execution_feasibility_verdict_drafts": draft_report,
+    }
+
+
 def _method_pm_plan_draft_index(plan_dir: Path) -> dict[str, dict[str, Any]]:
     if not plan_dir.exists() or not plan_dir.is_dir():
         return {}
@@ -1320,6 +1458,62 @@ def _execution_feasibility_verdict(item: dict[str, Any]) -> dict[str, Any]:
         "next_action": "action:review_execution_feasibility_verdicts"
         if feasibility_status == "not_evaluated"
         else "action:review_execution_constraint_snapshots",
+    }
+
+
+def _execution_feasibility_verdict_review_index(review_dir: Path) -> dict[str, dict[str, Any]]:
+    if not review_dir.exists() or not review_dir.is_dir():
+        return {}
+    reviews: dict[str, dict[str, Any]] = {}
+    for path in sorted(review_dir.glob("*.json")):
+        payload = _read_json_object(path)
+        if payload is None:
+            continue
+        sample_id = payload.get("ashare_sample_id")
+        if sample_id:
+            reviews[str(sample_id)] = payload
+    return reviews
+
+
+def _execution_feasibility_verdict_ready_item(
+    verdict: dict[str, Any],
+    review: dict[str, Any],
+) -> dict[str, Any]:
+    feasibility_status = str(review.get("feasibility_status"))
+    carry_forward_required = bool(review.get("carry_forward_required", False))
+    if feasibility_status == "carry_forward_required":
+        carry_forward_required = True
+    next_action = "action:review_execution_feasibility_verdicts"
+    if feasibility_status != "not_evaluated":
+        next_action = "action:review_execution_feasibility_outcome"
+    return {
+        **verdict,
+        "feasibility_status": feasibility_status,
+        "blocked_reason": review.get("blocked_reason", []),
+        "carry_forward_required": carry_forward_required,
+        "verdict_source": "manual_review",
+        "verdict_reason": review.get("verdict_reason", []),
+        "evidence_ref": _unique_preserve_order(
+            [
+                *_list_value(verdict.get("evidence_ref")),
+                *_list_value(review.get("evidence_ref")),
+            ]
+        ),
+        "next_action": next_action,
+    }
+
+
+def _execution_feasibility_verdict_blocked_item(
+    verdict: dict[str, Any],
+    review: dict[str, Any],
+    contract: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "ashare_sample_id": verdict.get("ashare_sample_id"),
+        "ts_code": verdict.get("ts_code"),
+        "feasibility_status": review.get("feasibility_status"),
+        "issues": contract.get("issues", []),
+        "next_action": contract.get("next_action", "action:review_execution_feasibility_verdicts"),
     }
 
 
@@ -2159,10 +2353,37 @@ def main(argv: list[str] | None = None) -> int:
         help="Build manual-review execution feasibility verdict drafts without trade decisions or position sizing.",
     )
     parser.add_argument(
+        "--audit-first-batch-execution-feasibility-verdict-merge",
+        help="Merge a directory of manual execution feasibility verdict JSON files into the audit-only verdict layer.",
+    )
+    parser.add_argument(
+        "--method-pm-plan-dir",
+        help="Method/PM plan directory required by execution-feasibility verdict merge.",
+    )
+    parser.add_argument(
         "--institution-fact-root",
         help="Institution fact package root for execution constraint snapshot drafts; defaults to --root.",
     )
     args = parser.parse_args(argv)
+
+    if args.audit_first_batch_execution_feasibility_verdict_merge:
+        if not args.method_pm_plan_dir:
+            report = {
+                "result": "blocked",
+                "next_action": "action:review_execution_feasibility_verdicts",
+                "issues": ["missing_method_pm_plan_dir_for_execution_feasibility_verdict_merge"],
+            }
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 1
+        fact_root = args.institution_fact_root or args.root
+        report = audit_first_batch_execution_feasibility_verdict_merge(
+            args.root,
+            args.method_pm_plan_dir,
+            fact_root,
+            args.audit_first_batch_execution_feasibility_verdict_merge,
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report["result"] == "pass" else 1
 
     if args.audit_first_batch_execution_feasibility_verdicts:
         fact_root = args.institution_fact_root or args.root
