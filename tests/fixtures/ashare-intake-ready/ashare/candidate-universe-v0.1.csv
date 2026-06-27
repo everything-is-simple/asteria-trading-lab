@@ -1,0 +1,3 @@
+ts_code,symbol_name,board_type,list_date,is_st,is_new_stock_window,data_quality_status,source_ref
+000001.SZ,Ping An Bank,main,1991-04-03,false,false,ready,fixture:not-real
+
