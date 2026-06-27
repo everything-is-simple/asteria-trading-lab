@@ -1,0 +1,38 @@
+{
+  "ashare_sample_id": "ASHARE-000001.SZ-2026-03-24-2026-04-03",
+  "ts_code": "000001.SZ",
+  "symbol_name": "平安银行",
+  "qualification_rule_id": "Q-ALIVE-CLEAN",
+  "rhythm_meaning": "meaningful",
+  "tachibana_applicability": "suitable",
+
+  "method_action": "trend_probe_entry",
+  "method_status": "hypothesis",
+  "method_reason": [
+    "structure_is_clean_alive_wave_per_malf_snapshot",
+    "rule_q_alive_clean_maps_to_probe_then_add_per_horizontal_matrix",
+    "tachibana_1975_01_segment_used_trend_probe_entry_for_similar_clean_push_per_research_mapping"
+  ],
+
+  "pm_required": false,
+  "pm_action": null,
+
+  "execution_intent": "replay_hypothesis_plan",
+  "execution_event_type": "open_center",
+
+  "method_evidence_ref": [
+    "docs/tachibana/index/MALF-立花结构资格横向判读矩阵-v0.1.md#Q-ALIVE-CLEAN",
+    "docs/tachibana/index/MALF-立花1975-06交易段结构资格审计-v0.1.md",
+    "docs/tachibana/index/MALF-立花结构状态到仓位节奏意义判定准则-v0.1.md",
+    "docs/tachibana/method-pm-plans/first-batch-v0.1/README.md"
+  ],
+
+  "research_notes": [
+    "This is a research-mapping HYPOTHESIS plan, not an observed Tachibana trade on this A-share.",
+    "Q-ALIVE-CLEAN horizontal matrix permits: 试仓 / 同向加码 / 分批减仓. We pick trend_probe_entry (probe) as the simplest first step.",
+    "execution_intent=replay_hypothesis_plan is required to advance to backtest_input_snapshot; audit_only would block at backtest_input_gate by design.",
+    "method_status=hypothesis declares: this action was NOT observed in any real Tachibana 1975-1976 record for 000001.SZ — it is derived by analogy from Tachibana's own 1975-01 / 1975-04 / 1975-11 / 1976-10 alive-clean segments.",
+    "Method/PM auto-generation from MALF is forbidden (method_pm_auto_generation_allowed=False). This draft is HUMAN-REVIEWABLE; reviewers MAY change the method_action / reason / evidence_ref freely.",
+    "boundary: do_not_infer_position_size_from_malf — this draft contains NO position size."
+  ]
+}

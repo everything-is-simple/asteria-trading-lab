@@ -1,0 +1,40 @@
+{
+  "ashare_sample_id": "ASHARE-300750.SZ-2026-03-24-2026-04-03",
+  "ts_code": "300750.SZ",
+  "symbol_name": "宁德时代",
+  "qualification_rule_id": "Q-PRESSURE-ADJUST",
+  "rhythm_meaning": "limited",
+  "tachibana_applicability": "conditional",
+
+  "method_action": "pullback_add",
+  "method_status": "hypothesis",
+  "method_reason": [
+    "structure_is_pullback_with_pressure_adjustment_per_malf_snapshot",
+    "rule_q_pressure_adjust_maps_to_pullback_add_or_inventory_rebalance_per_horizontal_matrix",
+    "tachibana_1976_03_A_segment_documents_pressure_adjustment_add_back_per_research_mapping",
+    "rhythm_meaning_limited_requires_pm_review_per_pm_required_from_structure"
+  ],
+
+  "pm_required": true,
+  "pm_action": "add_on",
+
+  "execution_intent": "replay_hypothesis_plan",
+  "execution_event_type": "add_on",
+
+  "method_evidence_ref": [
+    "docs/tachibana/index/MALF-立花结构资格横向判读矩阵-v0.1.md#Q-PRESSURE-ADJUST",
+    "docs/tachibana/index/MALF-立花1976-03与07交易段结构资格审计-v0.1.md",
+    "docs/tachibana/index/MALF-立花结构状态到仓位节奏意义判定准则-v0.1.md",
+    "docs/tachibana/method-pm-plans/first-batch-v0.1/README.md"
+  ],
+
+  "research_notes": [
+    "This is a research-mapping HYPOTHESIS plan, not an observed Tachibana trade on 300750.SZ.",
+    "Q-PRESSURE-ADJUST horizontal matrix permits: 压力调整 / 库存再平衡 / 减仓后加回. We pick pullback_add (add after pullback) as the canonical 'add-back-after-pressure' action.",
+    "pm_required=true is REQUIRED here because rhythm_meaning=limited (see _pm_required_from_trial_row in ashare_intake_validator.py).",
+    "pm_action=add_on is selected to be coherent with method_action=pullback_add. Alternative human choice: pm_action=rebalance (inventory_rebalance).",
+    "method_status=hypothesis: derived by analogy from Tachibana's own 1976-03-A pressure-adjust segment. NO real Tachibana trade on 300750.SZ.",
+    "boundary: do_not_merge_pressure_adjustment_into_clean_wave (pressure adjust ≠ clean alive wave).",
+    "boundary: do_not_treat_addon_size_as_structure_fact (addon size lives in PM, not MALF)."
+  ]
+}
