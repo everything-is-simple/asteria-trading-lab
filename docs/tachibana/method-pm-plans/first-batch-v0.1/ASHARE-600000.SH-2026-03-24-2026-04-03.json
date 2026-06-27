@@ -1,0 +1,41 @@
+{
+  "ashare_sample_id": "ASHARE-600000.SH-2026-03-24-2026-04-03",
+  "ts_code": "600000.SH",
+  "symbol_name": "浦发银行",
+  "qualification_rule_id": "Q-LOCK-WAIT",
+  "rhythm_meaning": "limited",
+  "tachibana_applicability": "conditional",
+
+  "method_action": "wait_no_action",
+  "method_status": "hypothesis",
+  "method_reason": [
+    "structure_is_range_state_with_no_trade_wait_per_malf_snapshot",
+    "rule_q_lock_wait_maps_to_wait_no_action_per_horizontal_matrix",
+    "tachibana_1976_04_B_segment_documents_no_trade_during_dual_inventory_per_research_mapping",
+    "rhythm_meaning_limited_requires_pm_review_per_pm_required_from_structure"
+  ],
+
+  "pm_required": true,
+  "pm_action": "lock_candidate",
+
+  "execution_intent": "replay_hypothesis_plan",
+  "execution_event_type": "lock_candidate",
+
+  "method_evidence_ref": [
+    "docs/tachibana/index/MALF-立花结构资格横向判读矩阵-v0.1.md#Q-LOCK-WAIT",
+    "docs/tachibana/index/MALF-立花1976-04至05交易段结构资格审计-v0.1.md",
+    "docs/tachibana/index/MALF-立花结构状态到仓位节奏意义判定准则-v0.1.md",
+    "docs/tachibana/method-pm-plans/first-batch-v0.1/README.md"
+  ],
+
+  "research_notes": [
+    "This is a research-mapping HYPOTHESIS plan, not an observed Tachibana trade on 600000.SH.",
+    "Q-LOCK-WAIT horizontal matrix points to wait_no_action as the only canonical method_action.",
+    "BUT rhythm_meaning=limited forces pm_required=true (see _pm_required_from_trial_row). So we add pm_action=lock_candidate to keep the dual-inventory context explicit on the PM ledger.",
+    "Semantic tension noted: method_action=wait_no_action has execution_replay_allowed=False in METHOD_ACTION_CATALOG, while we use execution_intent=replay_hypothesis_plan to advance the pipeline. This tension is real and deliberate — a human reviewer SHOULD decide whether to (a) keep this draft for pipeline continuity or (b) downgrade to execution_intent=audit_only and accept stopping at backtest_input_gate.",
+    "execution_event_type=lock_candidate matches the PM-layer event being declared, not a trade execution.",
+    "method_status=hypothesis: derived by analogy from Tachibana's own 1976-04-B dual-inventory wait segment. NO real Tachibana trade on 600000.SH.",
+    "boundary: do_not_confirm_lock_from_dual_inventory_only (lock candidate ≠ confirmed lock).",
+    "boundary: do_not_net_dual_inventory_into_single_direction."
+  ]
+}
