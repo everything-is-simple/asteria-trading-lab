@@ -17,11 +17,16 @@
 
 ## 最小字段映射
 
+主输出只有四类：
+
 - `symbol_master`
 - `trading_calendar`
 - `daily_bars`
-- `adjustment_metadata`
 - `sector_membership`
+
+辅助事实单独保留：
+
+- `adjustment_metadata`
 
 ## 运行方式
 

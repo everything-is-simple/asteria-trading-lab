@@ -54,6 +54,19 @@ class TdxLocalAuditTest(unittest.TestCase):
         self.assertIn("*.7z", report["upload_boundary"]["blocked_patterns"])
         self.assertEqual(report["source_priority"], ["local_tdx_pymp", "offline_tdx_files", "legacy_duckdb"])
         self.assertEqual(
+            list(report["field_mapping"].keys()),
+            ["symbol_master", "trading_calendar", "daily_bars", "sector_membership"],
+        )
+        self.assertEqual(
+            report["supporting_facts"],
+            {
+                "adjustment_metadata": {
+                    "source_files": ["raw/*.txt", "market_meta.duckdb"],
+                    "target_fields": ["adj_ref", "corporate_action_flag", "source_ref"],
+                }
+            },
+        )
+        self.assertEqual(
             report["field_mapping"]["daily_bars"]["source_files"],
             ["stock-day/<ts_code>.day", "stock/<ts_code>.txt"],
         )
