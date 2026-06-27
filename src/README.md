@@ -43,6 +43,7 @@ $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-tradi
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-institution-fact-package
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-constraint-snapshots path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-feasibility-gate path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
+$env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-feasibility-verdicts path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root tests\fixtures\ashare-intake-ready
 $env:PYTHONPATH='src'; python -m tachibana_front_filter --snapshot tests\fixtures\front-filter\alive-wave-ready.json
 $env:PYTHONPATH='src'; python -m tachibana_front_filter --snapshot tests\fixtures\front-filter\alive-wave-ready.json --record-draft --ashare-sample-id ASHARE-FIXTURE-001 --symbol-name "Ping An Bank"
@@ -110,3 +111,5 @@ Data / Signal / Backtest 接口边界集中在 `get_interface_boundary_catalog()
 `ashare_intake_validator.py --audit-first-batch-execution-constraint-snapshots <dir> --institution-fact-root <root>` 会把已通过制度事实包验收的事实行，映射成只读 `AShareExecutionConstraintSnapshot` 草案。快照只引用 `constraint_ref / ts_code / trade_date / constraint_type / affected_execution_event / evidence_ref` 等事实字段，固定 `executable_status=not_evaluated`，因此不能直接驱动成交、PnL 或仓位调整。
 
 `ashare_intake_validator.py --audit-first-batch-execution-feasibility-gate <dir> --institution-fact-root <root>` 会把已匹配约束快照的 `AShareExecutionFeasibilityAudit` 从 `pending_constraint_evidence` 升级为 `evidence_ready`。`evidence_ready` 只表示制度事实证据已经对齐，仍固定 `backtest_execution_allowed=false / signal_generation_allowed=false`，不得解释成 `trade_accept`、仓位许可或成交许可。
+
+`ashare_intake_validator.py --audit-first-batch-execution-feasibility-verdicts <dir> --institution-fact-root <root>` 会在 `evidence_ready` 后生成只读 `AShareExecutionFeasibilityVerdict` 人工复核草案。草案只允许 `not_evaluated / evidence_ready / executable / constrained / blocked / carry_forward_required / blocked_by_fact_review` 这些执行事实状态，默认停在 `feasibility_status=not_evaluated`，并继续固定 `institution_rule_definition_allowed=false / signal_generation_allowed=false / backtest_execution_allowed=false`。该命令不得输出 `buy_signal / trade_accept / target_position / position_size / ashare_t1_action / limit_up_strategy`。

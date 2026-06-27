@@ -123,6 +123,16 @@ INSTITUTION_GATE_FORBIDDEN_FIELDS = {
     "tachibana_applicability_override",
 }
 
+EXECUTION_FEASIBILITY_VERDICT_STATUSES = [
+    "not_evaluated",
+    "evidence_ready",
+    "executable",
+    "constrained",
+    "blocked",
+    "carry_forward_required",
+    "blocked_by_fact_review",
+]
+
 
 def audit_ashare_institution_fact_package(data_root: str | Path) -> dict[str, Any]:
     root = Path(data_root)
@@ -910,6 +920,51 @@ def audit_first_batch_execution_feasibility_gate(
     }
 
 
+def audit_first_batch_execution_feasibility_verdicts(
+    data_root: str | Path,
+    plan_dir: str | Path,
+    institution_fact_root: str | Path,
+) -> dict[str, Any]:
+    gate_report = audit_first_batch_execution_feasibility_gate(data_root, plan_dir, institution_fact_root)
+    if gate_report["result"] != "pass":
+        return {
+            "result": "blocked",
+            "execution_feasibility_verdict_count": 0,
+            "execution_feasibility_verdicts": [],
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": gate_report["next_action"],
+            "issues": gate_report["issues"],
+            "execution_feasibility_gate": gate_report,
+        }
+
+    verdicts = [
+        _execution_feasibility_verdict(item)
+        for item in gate_report.get("execution_feasibility_gate_items", [])
+        if isinstance(item, dict)
+    ]
+    ready_verdicts = [
+        verdict
+        for verdict in verdicts
+        if verdict.get("evidence_status") == "evidence_ready"
+    ]
+    result = "pass" if ready_verdicts else "blocked"
+    return {
+        "result": result,
+        "execution_feasibility_verdict_count": len(ready_verdicts),
+        "execution_feasibility_verdicts": ready_verdicts,
+        "institution_rule_definition_allowed": False,
+        "signal_generation_allowed": False,
+        "backtest_execution_allowed": False,
+        "next_action": "action:review_execution_feasibility_verdicts"
+        if result == "pass"
+        else "action:manual_review_execution_feasibility",
+        "issues": [] if result == "pass" else ["execution_feasibility_verdict_requires_evidence_ready"],
+        "execution_feasibility_gate": gate_report,
+    }
+
+
 def _method_pm_plan_draft_index(plan_dir: Path) -> dict[str, dict[str, Any]]:
     if not plan_dir.exists() or not plan_dir.is_dir():
         return {}
@@ -1221,6 +1276,49 @@ def _execution_feasibility_gate_item(record: dict[str, Any], snapshot: dict[str,
         "backtest_execution_allowed": False,
         "next_action": "action:manual_review_execution_feasibility"
         if has_snapshot
+        else "action:review_execution_constraint_snapshots",
+    }
+
+
+def _execution_feasibility_verdict(item: dict[str, Any]) -> dict[str, Any]:
+    evidence_status = str(item.get("executable_status", "not_evaluated"))
+    if evidence_status != "evidence_ready":
+        feasibility_status = "blocked_by_fact_review"
+    else:
+        feasibility_status = "not_evaluated"
+    boundary_warning = _unique_preserve_order(
+        [
+            *_list_value(item.get("boundary_warning")),
+            "manual_verdict_must_not_be_trade_accept",
+            "manual_verdict_must_not_set_position_size",
+            "manual_verdict_must_not_define_t1_or_limit_strategy",
+        ]
+    )
+    return {
+        "record_type": "AShareExecutionFeasibilityVerdict",
+        "ashare_institution_gate_id": item.get("ashare_institution_gate_id"),
+        "ashare_sample_id": item.get("ashare_sample_id"),
+        "ts_code": item.get("ts_code"),
+        "planned_event": item.get("planned_event"),
+        "method_action": item.get("method_action"),
+        "pm_action": item.get("pm_action"),
+        "constraint_snapshot_ref": item.get("constraint_snapshot_ref"),
+        "evidence_status": evidence_status,
+        "feasibility_status": feasibility_status,
+        "allowed_feasibility_statuses": EXECUTION_FEASIBILITY_VERDICT_STATUSES,
+        "blocked_reason": item.get("blocked_reason", []),
+        "carry_forward_required": item.get("carry_forward_required", False),
+        "verdict_source": "manual_review_required",
+        "verdict_reason": ["awaiting_manual_execution_feasibility_review"]
+        if feasibility_status == "not_evaluated"
+        else ["execution_fact_review_not_ready"],
+        "evidence_ref": _list_value(item.get("constraint_snapshot_ref")),
+        "boundary_warning": boundary_warning,
+        "institution_rule_definition_allowed": False,
+        "signal_generation_allowed": False,
+        "backtest_execution_allowed": False,
+        "next_action": "action:review_execution_feasibility_verdicts"
+        if feasibility_status == "not_evaluated"
         else "action:review_execution_constraint_snapshots",
     }
 
@@ -2057,10 +2155,24 @@ def main(argv: list[str] | None = None) -> int:
         help="Mark execution feasibility audits as evidence-ready when constraint snapshots are linked, without trade decisions.",
     )
     parser.add_argument(
+        "--audit-first-batch-execution-feasibility-verdicts",
+        help="Build manual-review execution feasibility verdict drafts without trade decisions or position sizing.",
+    )
+    parser.add_argument(
         "--institution-fact-root",
         help="Institution fact package root for execution constraint snapshot drafts; defaults to --root.",
     )
     args = parser.parse_args(argv)
+
+    if args.audit_first_batch_execution_feasibility_verdicts:
+        fact_root = args.institution_fact_root or args.root
+        report = audit_first_batch_execution_feasibility_verdicts(
+            args.root,
+            args.audit_first_batch_execution_feasibility_verdicts,
+            fact_root,
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report["result"] == "pass" else 1
 
     if args.audit_first_batch_execution_feasibility_gate:
         fact_root = args.institution_fact_root or args.root

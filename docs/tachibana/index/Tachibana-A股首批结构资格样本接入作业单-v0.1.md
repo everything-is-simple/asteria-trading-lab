@@ -595,6 +595,28 @@ $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-tradi
 
 `evidence_ready` 不是 `trade_accept`，也不是仓位许可。下一步必须由人工或后续最小执行可行性规则审计，判断计划动作在制度事实下如何记录；在此之前，仍不得把制度事实变成买卖信号或回测成交。
 
+## execution feasibility verdicts 输出字段
+
+执行可行性证据就绪后，可以生成一层人工复核裁决草案：
+
+```powershell
+$env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-feasibility-verdicts <method-pm-plan-dir> --institution-fact-root Z:\asteria-trading-labs-data
+```
+
+该输出闭合到“可审计但不交易”的状态：
+
+| 字段 | 含义 |
+|---|---|
+| `execution_feasibility_verdict_count` | 本轮生成的人工复核裁决草案数量。 |
+| `execution_feasibility_verdicts` | 每条记录为 `AShareExecutionFeasibilityVerdict`，保留样本、计划事件、约束快照引用和裁决状态。 |
+| `evidence_status` | 来自上一层 gate；必须为 `evidence_ready` 才进入草案。 |
+| `feasibility_status` | 默认 `not_evaluated`，等待人工复核。允许枚举为 `not_evaluated / evidence_ready / executable / constrained / blocked / carry_forward_required / blocked_by_fact_review`。 |
+| `verdict_source` | 固定为 `manual_review_required`；系统不自动给出成交判断。 |
+| `backtest_execution_allowed` | 固定为 `false`；裁决草案不能驱动成交或 PnL。 |
+| `signal_generation_allowed` | 固定为 `false`；裁决草案不能生成 Signal。 |
+
+该层仍禁止 `buy_signal / sell_signal / trade_accept / target_position / position_size / ashare_t1_action / limit_up_strategy`。即使后续人工把 `feasibility_status` 复核为 `executable`，也只能表示计划事件在制度事实下“执行可行性可记录”，不表示买入许可、卖出许可或目标仓位。
+
 ## Backtest Input readiness 输出字段
 
 `--audit-first-batch-backtest-input-readiness` 的输出应作为 Backtest Input 快照准备前的只读闸门：
