@@ -289,6 +289,97 @@ class TdxLocalReadersTest(unittest.TestCase):
             }
         ])
 
+    def test_readers_support_real_duckdb_named_schema_and_prefixed_symbols(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            duckdb_root = root / "duckdb"
+            duckdb_root.mkdir()
+            import duckdb
+
+            con = duckdb.connect(str(duckdb_root / "market_meta.duckdb"))
+            con.execute("create schema market_meta")
+            con.execute(
+                """
+                create table market_meta.market_meta.instrument_master (
+                    symbol varchar,
+                    asset_type varchar,
+                    exchange varchar,
+                    name varchar,
+                    list_dt date,
+                    delist_dt date,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.execute(
+                """
+                create table market_meta.market_meta.trade_calendar (
+                    exchange varchar,
+                    trade_dt date,
+                    is_open boolean,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.execute(
+                """
+                create table market_meta.market_meta.industry_block_relation (
+                    symbol varchar,
+                    asset_type varchar,
+                    relation_type varchar,
+                    relation_code varchar,
+                    relation_name varchar,
+                    effective_from date,
+                    effective_to date,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.execute(
+                """
+                insert into market_meta.market_meta.instrument_master values
+                ('sz000001', 'stock', 'SZ', 'Ping An Bank', '1991-04-03', null, 'run-1', 'v1', 'r1', 'hash-1')
+                """
+            )
+            con.execute(
+                """
+                insert into market_meta.market_meta.trade_calendar values
+                ('SZ', '2026-04-03', true, 'run-1', 'v1', 'r1', 'hash-1')
+                """
+            )
+            con.execute(
+                """
+                insert into market_meta.market_meta.industry_block_relation values
+                ('sz000001', 'stock', 'industry', 'T1001', 'Bank', '2026-04-01', null, 'run-1', 'v1', 'r1', 'hash-1')
+                """
+            )
+            con.close()
+
+            symbols = read_symbol_master(root / "tdx", root / "offline", duckdb_root=duckdb_root)
+            calendar = read_trading_calendar(root / "tdx", root / "offline", duckdb_root=duckdb_root)
+            sector = read_sector_membership(root / "offline", duckdb_root=duckdb_root, limit_files=10)
+            duckdb_report = inspect_duckdb_assets(duckdb_root)
+
+        self.assertEqual(symbols[0]["ts_code"], "000001.SZ")
+        self.assertEqual(symbols[0]["market"], "SZ")
+        self.assertEqual(symbols[0]["symbol_name"], "Ping An Bank")
+        self.assertEqual(calendar[0]["trade_date"], "2026-04-03")
+        self.assertEqual(calendar[0]["market"], "SZ")
+        self.assertEqual(sector["result"], "pass")
+        self.assertEqual(sector["sector_membership"][0]["ts_code"], "000001.SZ")
+        self.assertEqual(sector["sector_membership"][0]["sector_code"], "T1001")
+        self.assertEqual(duckdb_report["result"], "pass")
+        self.assertEqual(duckdb_report["databases"][0]["tables"][0]["row_estimate"], 1)
+
     def test_inspect_duckdb_assets_lists_tables_and_columns(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

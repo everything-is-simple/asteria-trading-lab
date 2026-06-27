@@ -15,6 +15,7 @@
 - `original_tachibana/audit_source_data.py`：审计 24 个 JSON 与 24 张源图的对应关系和账面一致性。
 - `ashare_intake_validator.py`：只读复核 `Z:\asteria-trading-labs-data\ashare\` A 股最小接入包的路径、字段与禁用交易字段。
 - `tachibana_front_filter.py`：只读运行 MALF-立花前置认知过滤器，输出 `rhythm_meaning / tachibana_applicability`，不输出交易或仓位字段。
+- `data_sources/tdx_local/first_batch.py`：基于 Tongdaxin + DuckDB 主账本生成首批真实 A 股样本接入包，并复用现有只读 gate 做样本覆盖审计。
 - `tests/fixtures/ashare-intake-ready/`：非真实 A 股最小接入包 fixture，只用于验证 ready 接入包仍必须停在 `structure_candidate` 并进入前置过滤器。
 - `tests/fixtures/front-filter/`：非真实 MALF snapshot fixture，只用于验证前置过滤器输出契约。
 - 输出目标：`data/pioneer-1975-1976/backtest-v0.1/`。
@@ -52,7 +53,20 @@ $env:PYTHONPATH='src'; python -m tachibana_front_filter --audit-rhythm-samples
 $env:PYTHONPATH='src'; python -m tachibana_front_filter --audit-method-pm-actions
 $env:PYTHONPATH='src'; python -m tachibana_front_filter --audit-interface-boundary
 $env:PYTHONPATH='src'; python -m tachibana_front_filter --audit-front-filter-system
+@'
+from data_sources.tdx_local import build_first_batch_sample_package, audit_first_batch_sample_coverage
+build_report = build_first_batch_sample_package(
+    data_root=r"Z:\asteria-trading-labs-data",
+    tdx_root=r"Z:\new_tdx64",
+    offline_root=r"Z:\tdx_offline_Data",
+    duckdb_root=r"Z:\malf-data",
+)
+coverage = audit_first_batch_sample_coverage(r"Z:\asteria-trading-labs-data")
+print(build_report["result"], coverage["covered_structure_targets"], coverage["trial_row_count"])
+'@ | python -
 ```
+
+注意：`data_sources/tdx_local/first_batch.py` 当前生成的是“研究映射型 ready snapshot”，用于把真实样本窗口推进到前置过滤器和样本表试填链路；它不是自动 MALF 引擎，也不生成交易信号或仓位。
 
 ## 前置过滤器机器闸门
 

@@ -2,6 +2,8 @@
 
 - 规则参考位于 `reference/`
 - 本地数据资产只读审计见 [local-data-audit.md](local-data-audit.md)
+- 首批真实样本窗口清单见 [first-batch-real-samples.md](first-batch-real-samples.md)
+- 首批真实样本链路审计见 [first-batch-real-sample-audit.md](first-batch-real-sample-audit.md)
 - 立花法 A 股适配定义见 [../tachibana/index/Tachibana-A股适配版-雏形.md](../tachibana/index/Tachibana-A%E8%82%A1%E9%80%82%E9%85%8D%E7%89%88-%E9%9B%8F%E5%BD%A2.md)
 - A 股候选股票结构资格样本表见 [../tachibana/index/Tachibana-A股候选股票结构资格样本表-v0.1.md](../tachibana/index/Tachibana-A%E8%82%A1%E5%80%99%E9%80%89%E8%82%A1%E7%A5%A8%E7%BB%93%E6%9E%84%E8%B5%84%E6%A0%BC%E6%A0%B7%E6%9C%AC%E8%A1%A8-v0.1.md)
 - A 股候选股票数据接入审计见 [../tachibana/index/Tachibana-A股候选股票数据接入审计-v0.1.md](../tachibana/index/Tachibana-A%E8%82%A1%E5%80%99%E9%80%89%E8%82%A1%E7%A5%A8%E6%95%B0%E6%8D%AE%E6%8E%A5%E5%85%A5%E5%AE%A1%E8%AE%A1-v0.1.md)

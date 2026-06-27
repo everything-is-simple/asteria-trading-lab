@@ -216,27 +216,31 @@ def inspect_duckdb_assets(duckdb_root: str | Path) -> dict[str, Any]:
                 }
             )
             continue
-        tables = con.sql(
+        tables = con.execute(
             """
-            select table_schema, table_name
+            select table_catalog, table_schema, table_name
             from information_schema.tables
             where table_schema not in ('information_schema', 'pg_catalog')
             order by table_schema, table_name
             """
         ).fetchall()
         table_reports = []
-        for schema_name, table_name in tables:
-            columns = con.sql(
-                f"""
+        for catalog_name, schema_name, table_name in tables:
+            columns = con.execute(
+                """
                 select column_name, data_type
                 from information_schema.columns
-                where table_schema='{schema_name}' and table_name='{table_name}'
+                where table_catalog = ? and table_schema = ? and table_name = ?
                 order by ordinal_position
-                """
+                """,
+                [catalog_name, schema_name, table_name],
             ).fetchall()
-            row_estimate = con.sql(f"select count(*) from {schema_name}.{table_name}").fetchone()[0]
+            row_estimate = con.execute(
+                f"select count(*) from {_duckdb_qualified_ref(catalog_name, schema_name, table_name)}"
+            ).fetchone()[0]
             table_reports.append(
                 {
+                    "table_catalog": catalog_name,
                     "table_schema": schema_name,
                     "table_name": table_name,
                     "row_estimate": row_estimate,
@@ -465,28 +469,36 @@ def _read_symbol_master_from_duckdb(root: Path, limit: int | None) -> list[dict[
         con = duckdb.connect(str(db_path), read_only=True)
     except Exception:
         return []
-    sql = """
+    table_ref = _resolve_duckdb_table_ref(con, "instrument_master")
+    if table_ref is None:
+        con.close()
+        return []
+    sql = f"""
         select symbol, exchange, name, list_dt, delist_dt
-        from main.instrument_master
+        from {table_ref}
+        where coalesce(asset_type, 'stock') in ('equity', 'stock')
         order by symbol
     """
     if limit is not None:
         sql += f" limit {int(limit)}"
-    rows = con.sql(sql).fetchall()
+    rows = con.execute(sql).fetchall()
     con.close()
-    return [
-        {
-            "ts_code": symbol,
-            "market": str(exchange).upper(),
-            "symbol_name": name,
-            "list_date": str(list_dt) if list_dt is not None else None,
-            "delist_date": str(delist_dt) if delist_dt is not None else None,
-            "source_type": "duckdb_instrument_master",
-            "source_path": "market_meta.duckdb:market_meta.instrument_master",
-            "source_ref": "market_meta.duckdb:market_meta.instrument_master",
-        }
-        for symbol, exchange, name, list_dt, delist_dt in rows
-    ]
+    normalized_rows = []
+    for symbol, exchange, name, list_dt, delist_dt in rows:
+        ts_code, market = _normalize_duckdb_symbol(symbol, exchange)
+        normalized_rows.append(
+            {
+                "ts_code": ts_code,
+                "market": market,
+                "symbol_name": name,
+                "list_date": str(list_dt) if list_dt is not None else None,
+                "delist_date": str(delist_dt) if delist_dt is not None else None,
+                "source_type": "duckdb_instrument_master",
+                "source_path": "market_meta.duckdb:market_meta.instrument_master",
+                "source_ref": "market_meta.duckdb:market_meta.instrument_master",
+            }
+        )
+    return normalized_rows
 
 
 def _read_trading_calendar_from_duckdb(root: Path, limit_files: int) -> list[dict[str, Any]]:
@@ -497,10 +509,14 @@ def _read_trading_calendar_from_duckdb(root: Path, limit_files: int) -> list[dic
         con = duckdb.connect(str(db_path), read_only=True)
     except Exception:
         return []
-    rows = con.sql(
+    table_ref = _resolve_duckdb_table_ref(con, "trade_calendar")
+    if table_ref is None:
+        con.close()
+        return []
+    rows = con.execute(
         f"""
         select exchange, trade_dt, is_open
-        from main.trade_calendar
+        from {table_ref}
         order by trade_dt, exchange
         limit {int(limit_files)}
         """
@@ -525,10 +541,16 @@ def _read_sector_membership_from_duckdb(root: Path, limit_files: int) -> dict[st
         con = duckdb.connect(str(db_path), read_only=True)
     except Exception:
         return {"result": "blocked", "reason": "sector_membership_source_missing", "sector_membership": []}
-    rows = con.sql(
+    table_ref = _resolve_duckdb_table_ref(con, "industry_block_relation")
+    if table_ref is None:
+        con.close()
+        return {"result": "blocked", "reason": "sector_membership_source_missing", "sector_membership": []}
+    rows = con.execute(
         f"""
         select symbol, relation_code, relation_name, effective_from, effective_to
-        from main.industry_block_relation
+        from {table_ref}
+        where coalesce(asset_type, 'stock') in ('equity', 'stock')
+          and coalesce(relation_type, 'industry') in ('industry', 'sw_l1')
         order by symbol, relation_code
         limit {int(limit_files)}
         """
@@ -541,7 +563,7 @@ def _read_sector_membership_from_duckdb(root: Path, limit_files: int) -> dict[st
         "selected_source": "duckdb_industry_block_relation",
         "sector_membership": [
             {
-                "ts_code": symbol,
+                "ts_code": _normalize_duckdb_symbol(symbol, None)[0],
                 "sector_code": relation_code,
                 "sector_name": relation_name,
                 "valid_from": str(effective_from) if effective_from is not None else None,
@@ -565,3 +587,65 @@ def _strip_forbidden_fields(value: Any) -> Any:
     if isinstance(value, list):
         return [_strip_forbidden_fields(item) for item in value]
     return value
+
+
+def _resolve_duckdb_table_ref(con: duckdb.DuckDBPyConnection, table_name: str) -> str | None:
+    rows = con.execute(
+        """
+        select table_catalog, table_schema
+        from information_schema.tables
+        where table_name = ?
+          and table_schema not in ('information_schema', 'pg_catalog')
+        order by
+          case when table_schema = 'main' then 0 else 1 end,
+          table_catalog,
+          table_schema
+        """,
+        [table_name],
+    ).fetchall()
+    refs: list[str] = []
+    for catalog_name, schema_name in rows:
+        refs.append(_duckdb_qualified_ref(catalog_name, schema_name, table_name))
+        refs.append(f'{_duckdb_quote(schema_name)}.{_duckdb_quote(table_name)}')
+        if schema_name == "main":
+            refs.append(_duckdb_quote(table_name))
+    seen: set[str] = set()
+    for ref in refs:
+        if ref in seen:
+            continue
+        seen.add(ref)
+        try:
+            con.execute(f"select 1 from {ref} limit 1").fetchone()
+            return ref
+        except Exception:
+            continue
+    return None
+
+
+def _duckdb_qualified_ref(catalog_name: str, schema_name: str, table_name: str) -> str:
+    return ".".join(
+        [
+            _duckdb_quote(catalog_name),
+            _duckdb_quote(schema_name),
+            _duckdb_quote(table_name),
+        ]
+    )
+
+
+def _duckdb_quote(identifier: str) -> str:
+    return '"' + identifier.replace('"', '""') + '"'
+
+
+def _normalize_duckdb_symbol(symbol: Any, exchange: Any) -> tuple[str, str]:
+    symbol_text = str(symbol or "")
+    exchange_text = str(exchange or "").upper()
+    direct_match = re.fullmatch(r"(\d{6})\.(SH|SZ|BJ)", symbol_text, re.IGNORECASE)
+    if direct_match:
+        return f"{direct_match.group(1)}.{direct_match.group(2).upper()}", direct_match.group(2).upper()
+    prefixed_match = re.fullmatch(r"(sh|sz|bj)(\d{6})", symbol_text, re.IGNORECASE)
+    if prefixed_match:
+        market = prefixed_match.group(1).upper()
+        return f"{prefixed_match.group(2)}.{market}", market
+    if exchange_text in SUFFIX_TO_MARKET and re.fullmatch(r"\d{6}", symbol_text):
+        return f"{symbol_text}.{exchange_text}", exchange_text
+    return symbol_text, exchange_text or "UNKNOWN"
