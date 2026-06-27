@@ -1,0 +1,4 @@
+ts_code,trade_date,open,high,low,close,volume,amount,adj_ref,suspension_flag,corporate_action_flag,missing_bar_flag
+000001.SZ,2026-01-05,10.00,10.50,9.80,10.20,100000,1020000,qfq,false,false,false
+000001.SZ,2026-01-06,10.20,10.80,10.10,10.70,110000,1177000,qfq,false,false,false
+

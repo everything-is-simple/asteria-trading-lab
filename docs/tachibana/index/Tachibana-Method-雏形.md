@@ -4,6 +4,8 @@
 
 - 本文件是 `Tachibana Method` 的第一版定义草案，基于已校引文、`1975-1976` 年先锋电子月报、交易依据分类表和 MALF 映射总表整理而成。
 - 本文件定义“立花义正如何做交易、为什么这样做、哪些动作可被结构化”，不是交易信号实现，也不是 MALF 主定义修订。
+- 本文件只在 [MALF-立花前置认知过滤器 v0.1](./MALF-立花前置认知过滤器-v0.1.md) 输出 `suitable` 或 `conditional` 后，才进入动作语义解释。
+- 分层边界见 [Tachibana 分层边界审计 v0.1](./Tachibana-分层边界审计-v0.1.md)；本文件不得接管 MALF / PM / A 股适配职责。
 - 本阶段只覆盖日线级别。立花专项研究暂不引入周线、月线、多周期氛围层。
 - `PAS` 继续冻结；本文件不接管 PAS 的触发器职责。
 
@@ -13,7 +15,7 @@
 |---|---|---|
 | 一级事实源 | [1975 月报](../monthly/1975-01.md) 至 [1976-12](../monthly/1976-12.md)、先锋交易重建 JSON、24 张交易谱截图 | 证明“他实际做了什么” |
 | 二级解释源 | [章节精读索引](./章节精读索引.md)、[逐页引文校勘表](./逐页引文校勘表.md) | 证明“书中如何解释这种做法” |
-| 三级抽象源 | [立花交易依据分类表](./立花交易依据分类表.md)、[MALF-立花映射总表](./MALF-立花映射总表.md) | 形成可复用的方法分类和 MALF 边界 |
+| 三级抽象源 | [立花交易依据分类表](./立花交易依据分类表.md)、[MALF-立花映射总表](./MALF-立花映射总表.md)、[MALF-立花前置认知过滤器 v0.1](./MALF-立花前置认知过滤器-v0.1.md) | 形成可复用的方法分类、MALF 边界和前置资格判定 |
 
 本文件中的判断必须区分四种性质：`事实`、`书中自述`、`我们的抽象解释`、`MALF 映射判断`。凡不能落到原文锚点或月份事实的内容，只能作为待验证假设。
 
@@ -89,6 +91,13 @@ flowchart TD
 
 ## 与 MALF 的接口
 
+Method 不直接消费“映射覆盖结论”。它先读取 [MALF-立花前置认知过滤器 v0.1](./MALF-立花前置认知过滤器-v0.1.md) 的 `tachibana_applicability`：
+
+- `suitable`：可以进入动作语义解释。
+- `conditional`：可以进入动作语义解释，但必须保留限制条件和证据等级。
+- `unsuitable`：只记录不进入 Method 动作解释。
+- `unknown`：等待 MALF 快照、月报证据或人工校勘。
+
 | MALF 输出 | Method 使用方式 | 禁止用法 |
 |---|---|---|
 | `wave / progress` | 辅助判断推进、回撤、停滞中的动作语境 | 不能直接生成买卖建议 |
@@ -100,6 +109,8 @@ flowchart TD
 
 ## 最小可回测接口草案
 
+正式的回测输入承接文件见 [Tachibana Backtest Input 适配层草案 v0.1](./Tachibana-Backtest-Input-适配层草案-v0.1.md)。本节只保留 Method 层应输出的最小解释字段。
+
 后续如果进入回测，`Tachibana Method` 至少需要输出以下解释字段，而不是直接输出订单：
 
 | 字段 | 类型 | 含义 |
@@ -108,8 +119,23 @@ flowchart TD
 | `method_reason` | list | 对应原则代码，如 `staged_execution`、`active_waiting` |
 | `evidence_level` | enum | `fact / book_self_statement / our_interpretation / malf_mapping` |
 | `source_anchor` | list | 月报链接、章节链接、PDF 页码、图片编号 |
+| `tachibana_applicability` | enum | 来自前置过滤器：`suitable / conditional / unsuitable / unknown` |
 | `malf_relation` | enum | `covered / approximate / partial / not_covered` |
 | `pm_required` | boolean | 是否必须交给 Position Management 决定手数、中心单、锁单或均价 |
+
+### Method / PM 桥接门
+
+进入 `TachibanaBacktestInputSnapshot` 前，Method 层输出必须先通过 `method_pm_bridge_gate`：
+
+| 检查项 | Method 层要求 |
+|---|---|
+| `method_action` | 必须属于本文件定义的 9 类动作代码。 |
+| `method_status` | 必须为 `observed / inferred / hypothesis`。 |
+| `method_reason` | 必须引用 Method 原则代码或受控理由，不能写买卖信号理由。 |
+| `pm_required` | 必须显式为 `true / false`，不能省略。 |
+| 禁止字段 | 不得输出 `buy_signal / trade_accept / target_position / position_size`。 |
+
+`method_pm_bridge_gate` 只检查 Method / PM 计划是否足以交给 Backtest Input，不生成动作，不生成订单，不替代 Signal。
 
 ## 当前未解决问题
 

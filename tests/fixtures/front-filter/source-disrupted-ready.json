@@ -1,0 +1,13 @@
+{
+  "malf_snapshot_ref": "FIXTURE-FRONT-FILTER-DISRUPTED",
+  "ts_code": "000001.SZ",
+  "window_start": "2026-01-05",
+  "window_end": "2026-01-06",
+  "malf_background": "transition",
+  "snapshot_quality_status": "ready",
+  "wave_range_break_fields": {
+    "source_disrupted": true
+  },
+  "evidence_ref": "fixture:not-real"
+}
+

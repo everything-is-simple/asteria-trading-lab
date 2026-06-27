@@ -1,0 +1,16 @@
+{
+  "malf_snapshot_ref": "FIXTURE-MALF-SNAP-000001-202601",
+  "ts_code": "000001.SZ",
+  "window_start": "2026-01-05",
+  "window_end": "2026-01-06",
+  "source_daily_file": "daily-window-v0.1/000001.SZ.csv",
+  "generated_at": "2026-06-26T00:00:00+08:00",
+  "malf_version": "MALF_Definitive_v2_0",
+  "malf_background": "alive_wave",
+  "wave_range_break_fields": {
+    "range_state": "fixture_ready_structure",
+    "wave_core_state": "alive"
+  },
+  "evidence_ref": "fixture:not-real",
+  "snapshot_quality_status": "ready"
+}

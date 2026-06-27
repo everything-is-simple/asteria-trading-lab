@@ -5,6 +5,8 @@
 - 本文件是 `Tachibana Position Management` 的第一版定义草案，专门承接立花方法中 MALF 当前无法覆盖的仓位管理部分。
 - 它回答的问题不是“行情往哪里走”，而是“同样的价格结构下，为什么这样下、下多少、保留什么、锁住什么、什么时候收束”。
 - 本文件与 [Tachibana Method v1 定义草案](./Tachibana-Method-雏形.md) 配套使用。Method 负责动作语义，Position Management 负责仓位结构和资金暴露。
+- 本文件只在 [MALF-立花前置认知过滤器 v0.1](./MALF-立花前置认知过滤器-v0.1.md) 输出 `suitable` 或 `conditional`，且 Method 动作需要 `pm_required = true` 时进入仓位推演。
+- 分层边界见 [Tachibana 分层边界审计 v0.1](./Tachibana-分层边界审计-v0.1.md)；本文件不得接管 MALF 结构判定或 A 股制度约束。
 - 本阶段只覆盖日线级别和 `1975-1976` 年先锋电子案例，不修改 MALF 主定义，不启用 PAS。
 
 ## 权威来源与证据纪律
@@ -13,7 +15,7 @@
 |---|---|---|
 | 一级事实源 | [1975 月报](../monthly/1975-01.md) 至 [1976-12](../monthly/1976-12.md)、先锋交易重建 JSON、24 张交易谱截图 | 证明仓位变化、持仓方向、加减仓过程 |
 | 二级解释源 | [第一章 操盤工具](../chapters/11-一章.md)、[第六章 開始使用鎖單](../chapters/16-六章.md)、[第八章 中心單和加碼單](../chapters/18-八章.md)、[第九章 確保獲利和鎖單](../chapters/19-九章.md) | 证明仓位工具、中心单、加码单、锁单、利润保护的书中位置 |
-| 三级抽象源 | [立花交易依据分类表](./立花交易依据分类表.md)、[MALF-立花映射总表](./MALF-立花映射总表.md) | 形成仓位动作分类和 MALF 边界 |
+| 三级抽象源 | [立花交易依据分类表](./立花交易依据分类表.md)、[MALF-立花映射总表](./MALF-立花映射总表.md)、[MALF-立花前置认知过滤器 v0.1](./MALF-立花前置认知过滤器-v0.1.md) | 形成仓位动作分类、MALF 边界和前置资格判定 |
 
 本文件中的仓位解释必须区分 `事实`、`书中自述`、`我们的抽象解释`、`MALF 映射判断`。不能因为月表出现双向仓位，就自动推断其心理动机；必须保留“我们的抽象解释”标签。
 
@@ -105,6 +107,8 @@ flowchart LR
 
 ## 与 MALF 的边界
 
+PM 不直接从 MALF 推导中心单、锁单或加码手数。它只接受前置过滤器已经判为 `suitable` 或 `conditional` 的结构背景，并且必须由 Method 先给出动作语义。
+
 | 内容 | 是否进入 MALF | 归属 |
 |---|---|---|
 | wave / range / progress / break | 是 | MALF |
@@ -121,6 +125,8 @@ flowchart LR
 
 ## 最小回测接口草案
 
+正式的回测输入承接文件见 [Tachibana Backtest Input 适配层草案 v0.1](./Tachibana-Backtest-Input-适配层草案-v0.1.md)。本节只保留 PM 层需要维护的仓位状态字段。
+
 后续进入回测时，PM 层至少需要维护以下状态字段：
 
 | 字段 | 类型 | 含义 |
@@ -136,9 +142,26 @@ flowchart LR
 | `lock_size` | number | 双向锁定规模 |
 | `pm_action` | enum | `open_center / add_on / reduce_add_on / reduce_center / inventory_seed / lock / lock_candidate / unlock / rebalance / clear` |
 | `pm_reason` | list | `preserve_core_then_adjust`、`add_only_with_context` 等原则代码 |
+| `tachibana_applicability` | enum | 来自前置过滤器：`suitable / conditional` |
+| `malf_background` | enum/list | 来自前置过滤器：`alive_wave / pullback / range / break_birth / stagnation / transition / unknown` |
 | `source_anchor` | list | 月报链接、章节链接、PDF 页码、图片编号 |
 
 这些字段是为了回放和研究，不等于已经给出最终交易规则。
+
+### Method / PM 桥接门
+
+当 `pm_required=true` 时，`method_pm_bridge_gate` 要求 PM 至少给出 `pm_action`。PM 动作必须来自本文件的受控动作表，如 `open_center / add_on / reduce_add_on / reduce_center / inventory_seed / lock_candidate / unlock / rebalance / clear / hold`。
+
+桥接门明确阻断以下写法：
+
+| 阻断写法 | 原因 |
+|---|---|
+| `center_position_from_malf` | 中心单不能由 MALF 自动推断。 |
+| `target_position_from_malf` | 目标仓位不属于 MALF。 |
+| `lock_confirmed_by_malf` | 锁单确认必须来自 PM / 交易事实 / 书页证据。 |
+| `trade_accept` | PM 不输出 Signal 裁决。 |
+
+因此，PM 可以把仓位计划交给 Backtest Input，但不能回头污染 MALF 主定义，也不能把仓位计划伪装成交易接受信号。
 
 ## 当前未解决问题
 
