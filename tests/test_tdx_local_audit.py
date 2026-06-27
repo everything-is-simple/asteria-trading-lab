@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from data_sources.tdx_local.audit import audit_local_data_assets
+from data_sources.tdx_local.manifest import BLOCKED_LOCATIONS, BLOCKED_PATTERNS, FIELD_MAPPING, SUPPORTING_FACTS
 
 
 class TdxLocalAuditTest(unittest.TestCase):
@@ -57,6 +58,7 @@ class TdxLocalAuditTest(unittest.TestCase):
             list(report["field_mapping"].keys()),
             ["symbol_master", "trading_calendar", "daily_bars", "sector_membership"],
         )
+        self.assertEqual(report["field_mapping"], FIELD_MAPPING)
         self.assertEqual(
             report["supporting_facts"],
             {
@@ -66,6 +68,7 @@ class TdxLocalAuditTest(unittest.TestCase):
                 }
             },
         )
+        self.assertEqual(report["supporting_facts"], SUPPORTING_FACTS)
         self.assertEqual(
             report["field_mapping"]["daily_bars"]["source_files"],
             ["stock-day/<ts_code>.day", "stock/<ts_code>.txt"],
@@ -82,6 +85,8 @@ class TdxLocalAuditTest(unittest.TestCase):
         self.assertIn("missing_offline_root", report["issues"])
         self.assertIn("missing_duckdb_root", report["issues"])
         self.assertFalse(report["tdx"]["ready"])
+        self.assertEqual(report["upload_boundary"]["blocked_locations"], BLOCKED_LOCATIONS)
+        self.assertEqual(report["upload_boundary"]["blocked_patterns"], BLOCKED_PATTERNS)
 
     def test_cli_emits_json_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

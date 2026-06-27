@@ -28,6 +28,8 @@
 
 - `adjustment_metadata`
 
+字段映射与上传边界的唯一事实来源集中在 `src/data_sources/tdx_local/manifest.py`，`audit.py` 和测试只引用这份清单，不再各自维护分叉口径。
+
 ## 运行方式
 
 ```powershell
