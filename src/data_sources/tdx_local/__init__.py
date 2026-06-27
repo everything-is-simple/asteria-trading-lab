@@ -14,6 +14,7 @@ __all__ = [
     "audit_local_data_assets",
     "audit_first_batch_sample_coverage",
     "build_first_batch_sample_package",
+    "build_minimal_institution_fact_package",
     "build_minimal_read_report",
     "inspect_duckdb_assets",
     "probe_pytdx_reader",
@@ -22,3 +23,11 @@ __all__ = [
     "read_symbol_master",
     "read_trading_calendar",
 ]
+
+
+def __getattr__(name: str):
+    if name == "build_minimal_institution_fact_package":
+        from .institution_facts import build_minimal_institution_fact_package
+
+        return build_minimal_institution_fact_package
+    raise AttributeError(name)

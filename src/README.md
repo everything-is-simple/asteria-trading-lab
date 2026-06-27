@@ -16,6 +16,7 @@
 - `ashare_intake_validator.py`：只读复核 `Z:\asteria-trading-labs-data\ashare\` A 股最小接入包的路径、字段与禁用交易字段。
 - `tachibana_front_filter.py`：只读运行 MALF-立花前置认知过滤器，输出 `rhythm_meaning / tachibana_applicability`，不输出交易或仓位字段。
 - `data_sources/tdx_local/first_batch.py`：基于 Tongdaxin + DuckDB 主账本生成首批真实 A 股样本接入包，并复用现有只读 gate 做样本覆盖审计。
+- `data_sources/tdx_local/institution_facts.py`：从本地 DuckDB `tradability_fact` 生成最小 A 股制度事实包，只用于把执行证据链路通到 `evidence_ready`。
 - `tests/fixtures/ashare-intake-ready/`：非真实 A 股最小接入包 fixture，只用于验证 ready 接入包仍必须停在 `structure_candidate` 并进入前置过滤器。
 - `tests/fixtures/front-filter/`：非真实 MALF snapshot fixture，只用于验证前置过滤器输出契约。
 - 输出目标：`data/pioneer-1975-1976/backtest-v0.1/`。
@@ -41,6 +42,7 @@ $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-tradi
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-backtest-input-snapshots path\to\method-pm-plan-dir
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-institution-constraint-gate path\to\method-pm-plan-dir
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-institution-feasibility-records path\to\method-pm-plan-dir
+$env:PYTHONPATH='src'; python -m data_sources.tdx_local.institution_facts --duckdb-root Z:\malf-data --data-root Z:\asteria-trading-labs-data --ts-code 000001.SZ --ts-code 300750.SZ --ts-code 600000.SH --window-start 2026-03-24 --window-end 2026-04-03
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-institution-fact-package
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-constraint-snapshots path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-feasibility-gate path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
@@ -121,6 +123,8 @@ Data / Signal / Backtest 接口边界集中在 `get_interface_boundary_catalog()
 `ashare_intake_validator.py --audit-first-batch-institution-feasibility-records <dir>` 会在制度约束启动闸门通过后，生成只读 `AShareExecutionFeasibilityAudit` 底稿。当前没有真实制度事实输入时，记录必须停在 `executable_status=pending_constraint_evidence`，并输出 `next_action=action:collect_institution_constraint_evidence`。该命令不允许回测执行，不定义 A 股规则，也不把制度问题反写成结构资格判断。
 
 `ashare_intake_validator.py --audit-institution-fact-package` 会验收 `ashare/institution-facts-v0.1/*.csv` 制度事实包。该包只允许记录交易日、停牌、涨跌停价、触及/收盘涨跌停状态、整手单位与来源引用；不得出现 `limit_up_strategy / trade_accept / target_position` 等策略、Signal 或仓位字段。通过只表示可以生成执行约束快照草案，不表示 A 股规则已经转正。
+
+`data_sources.tdx_local.institution_facts` 会从本地 DuckDB `market_meta.tradability_fact` 按 `ts_code + window` 生成最小制度事实包。当前最小通电策略只使用可交易性事实：`limit_up_price / limit_down_price` 留空，`close_limit_status / touched_limit_status=unknown`，`board_lot_size=100`。它不计算完整涨跌停价，不引入 AkShare / Baostock，也不生成任何交易许可。
 
 `ashare_intake_validator.py --audit-first-batch-execution-constraint-snapshots <dir> --institution-fact-root <root>` 会把已通过制度事实包验收的事实行，映射成只读 `AShareExecutionConstraintSnapshot` 草案。快照只引用 `constraint_ref / ts_code / trade_date / constraint_type / affected_execution_event / evidence_ref` 等事实字段，固定 `executable_status=not_evaluated`，因此不能直接驱动成交、PnL 或仓位调整。
 

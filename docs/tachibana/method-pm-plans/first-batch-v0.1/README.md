@@ -205,21 +205,23 @@ python -m ashare_intake_validator --root Z:\asteria-trading-labs-data `
 
 ---
 
-## 7. 下一公里建议
+## 7. 制度事实最小通电状态
 
-1. **人工评审本批 3 份草案** —— 按 §4 清单复核；不通过则修改 / 拒绝
-2. **生成制度事实包** —— 从 `Z:\malf-data\market_meta.duckdb` 的 `tradability_fact` 表按 2026-03-24~04-03 窗口 + 3 个 ts_code 提取
-3. **跑 `--audit-first-batch-execution-constraint-snapshots` → `--audit-first-batch-execution-feasibility-gate` → `--audit-first-batch-execution-feasibility-verdicts`** —— 把链路从 `pending_constraint_evidence` 推到 `evidence_ready` 再到人工 verdict
-4. **覆盖反例 / unknown**：考虑给 002714.SZ (NM-NO-STRUCTURE) 和 601127.SH (unknown) 也填一份"为什么不进入 Method/PM"的占位草案
+1. **人工评审本批 3 份草案** —— 已阅并合入 main；后续仍可按 §4 清单复核修订。
+2. **制度事实包最小通电** —— 已从 `Z:\malf-data\market_meta.duckdb` 的 `tradability_fact` 按 2026-03-24~04-03 窗口 + 3 个 ts_code 生成 `ashare/institution-facts-v0.1/*.csv`。
+3. **执行证据链路** —— `--audit-first-batch-execution-constraint-snapshots`、`--audit-first-batch-execution-feasibility-gate`、`--audit-first-batch-execution-feasibility-verdicts` 均已通过；3 条样本从 `pending_constraint_evidence` 推进到 `evidence_ready`，默认 verdict 仍为 `not_evaluated`。
+4. **下一步** —— 人工复核 `AShareExecutionFeasibilityVerdict`；仍不得把 `evidence_ready` 解释成 `trade_accept`、仓位许可、T+1 策略或涨跌停策略。
+5. **覆盖反例 / unknown**：考虑给 002714.SZ (NM-NO-STRUCTURE) 和 601127.SH (unknown) 也填一份"为什么不进入 Method/PM"的占位草案。
 
 ---
 
 **签字**: Claude (Opus 4.8) @ 2026-06-27
 **配套验证**:
-- 129 tests OK
+- 131 tests OK
 - 3 份草案通过 `audit_method_pm_plan_draft_contract`
 - 3 份草案通过 `audit_first_batch_method_pm_plan_merge`
 - 3 份草案生成 3 个 `BacktestInputSnapshot` (gate=pass, mode=hypothesis_replay)
 - 3 份草案生成 3 个 `AShareInstitutionConstraintGate` (status=pass)
-- 3 份草案生成 3 条 `AShareExecutionFeasibilityAudit` (status=pending_constraint_evidence)
+- 3 份草案生成 3 条 `AShareExecutionFeasibilityAudit` (status=evidence_ready)
+- 3 份草案生成 3 条 `AShareExecutionFeasibilityVerdict` (status=not_evaluated)
 - 三道全局硬闸（signal/backtest/institution_rule_definition）全程 False
