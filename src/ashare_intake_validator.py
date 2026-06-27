@@ -1540,6 +1540,86 @@ def audit_first_batch_execution_policy_archive(
     }
 
 
+def audit_first_batch_execution_policy_research_prep(
+    data_root: str | Path,
+    plan_dir: str | Path,
+    institution_fact_root: str | Path,
+    review_dir: str | Path,
+) -> dict[str, Any]:
+    archive_report = audit_first_batch_execution_policy_archive(
+        data_root,
+        plan_dir,
+        institution_fact_root,
+        review_dir,
+    )
+    if archive_report["result"] != "pass":
+        return {
+            "result": "blocked",
+            "execution_policy_research_prep_count": 0,
+            "execution_policy_research_preps": [],
+            "execution_policy_research_prep_blocked_count": 0,
+            "execution_policy_research_prep_blocked_items": [],
+            "research_prep_status_counts": {},
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": archive_report["next_action"],
+            "issues": ["execution_policy_research_prep_requires_valid_execution_policy_archive"],
+            "execution_policy_archive_report": archive_report,
+        }
+
+    preps: list[dict[str, Any]] = []
+    blocked_items = list(archive_report.get("execution_policy_archive_blocked_items", []))
+    invalid_statuses: list[dict[str, Any]] = []
+    for archive in archive_report.get("execution_policy_archives", []):
+        prep_item = _execution_policy_research_prep_item(archive)
+        if prep_item is None:
+            invalid_statuses.append(
+                {
+                    "ashare_sample_id": archive.get("ashare_sample_id"),
+                    "ts_code": archive.get("ts_code"),
+                    "candidate_constraint_type": archive.get("candidate_constraint_type"),
+                    "issues": [
+                        f"execution_policy_research_prep_invalid_archive_status:{archive.get('archive_status')}"
+                    ],
+                    "next_action": archive.get("next_action", "action:prepare_execution_policy_research"),
+                }
+            )
+            continue
+        preps.append(prep_item)
+
+    if invalid_statuses:
+        return {
+            "result": "blocked",
+            "execution_policy_research_prep_count": 0,
+            "execution_policy_research_preps": [],
+            "execution_policy_research_prep_blocked_count": len(blocked_items) + len(invalid_statuses),
+            "execution_policy_research_prep_blocked_items": [*blocked_items, *invalid_statuses],
+            "research_prep_status_counts": {},
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": _execution_policy_research_prep_report_next_action([], [*blocked_items, *invalid_statuses]),
+            "issues": ["execution_policy_research_prep_requires_valid_execution_policy_archive"],
+            "execution_policy_archive_report": archive_report,
+        }
+
+    return {
+        "result": "pass",
+        "execution_policy_research_prep_count": len(preps),
+        "execution_policy_research_preps": preps,
+        "execution_policy_research_prep_blocked_count": len(blocked_items),
+        "execution_policy_research_prep_blocked_items": blocked_items,
+        "research_prep_status_counts": _count_by_field(preps, "research_prep_status"),
+        "institution_rule_definition_allowed": False,
+        "signal_generation_allowed": False,
+        "backtest_execution_allowed": False,
+        "next_action": _execution_policy_research_prep_report_next_action(preps, blocked_items),
+        "issues": [],
+        "execution_policy_archive_report": archive_report,
+    }
+
+
 def _method_pm_plan_draft_index(plan_dir: Path) -> dict[str, dict[str, Any]]:
     if not plan_dir.exists() or not plan_dir.is_dir():
         return {}
@@ -2288,6 +2368,67 @@ def _execution_policy_archive_report_next_action(
     if archives or blocked_items:
         return "action:collect_additional_execution_evidence"
     return "action:review_execution_policy_archive"
+
+
+def _execution_policy_research_prep_item(archive: dict[str, Any]) -> dict[str, Any] | None:
+    archive_status = str(archive.get("archive_status"))
+    prep_reason_by_status = {
+        "review_required": ["execution_policy_candidate_ready_for_research_preparation"],
+        "evidence_incomplete": ["execution_policy_candidate_research_preparation_requires_additional_evidence"],
+        "carry_forward_required": ["execution_policy_candidate_research_preparation_carry_forward"],
+        "blocked": ["execution_policy_candidate_research_preparation_blocked"],
+    }
+    next_action_by_status = {
+        "review_required": "action:prepare_execution_policy_research",
+        "evidence_incomplete": "action:collect_additional_execution_evidence",
+        "carry_forward_required": "action:collect_additional_execution_evidence",
+        "blocked": "action:collect_additional_execution_evidence",
+    }
+    if archive_status not in prep_reason_by_status:
+        return None
+    return {
+        "record_type": "AShareExecutionPolicyResearchPrep",
+        "ashare_institution_gate_id": archive.get("ashare_institution_gate_id"),
+        "ashare_sample_id": archive.get("ashare_sample_id"),
+        "ts_code": archive.get("ts_code"),
+        "planned_event": archive.get("planned_event"),
+        "feasibility_status": archive.get("feasibility_status"),
+        "candidate_constraint_type": archive.get("candidate_constraint_type"),
+        "machine_candidate_status": archive.get("machine_candidate_status"),
+        "review_status": archive.get("review_status"),
+        "archive_status": archive_status,
+        "research_prep_status": archive_status,
+        "research_prep_reason": prep_reason_by_status[archive_status],
+        "blocked_reason": _list_value(archive.get("blocked_reason")),
+        "constraint_snapshot_ref": archive.get("constraint_snapshot_ref"),
+        "evidence_ref": _list_value(archive.get("evidence_ref")),
+        "review_source": archive.get("review_source"),
+        "archive_source": archive.get("archive_source"),
+        "research_prep_source": "execution_policy_archive",
+        "boundary_warning": _unique_preserve_order(
+            [
+                *_list_value(archive.get("boundary_warning")),
+                "execution_policy_research_prep_is_not_rule_definition",
+                "execution_policy_research_prep_must_not_emit_signal",
+                "execution_policy_research_prep_must_not_set_position",
+            ]
+        ),
+        "institution_rule_definition_allowed": False,
+        "signal_generation_allowed": False,
+        "backtest_execution_allowed": False,
+        "next_action": next_action_by_status[archive_status],
+    }
+
+
+def _execution_policy_research_prep_report_next_action(
+    preps: list[dict[str, Any]],
+    blocked_items: list[dict[str, Any]],
+) -> str:
+    if any(str(item.get("research_prep_status")) == "review_required" for item in preps):
+        return "action:prepare_execution_policy_research"
+    if preps or blocked_items:
+        return "action:collect_additional_execution_evidence"
+    return "action:prepare_execution_policy_research"
 
 
 def _execution_policy_review_contract_blocked_item(
@@ -3243,6 +3384,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Build read-only execution policy archive records from merged candidate reviews.",
     )
     parser.add_argument(
+        "--audit-first-batch-execution-policy-research-prep",
+        help="Build read-only execution policy research prep records from execution policy archive results.",
+    )
+    parser.add_argument(
         "--method-pm-plan-dir",
         help="Method/PM plan directory required by execution-feasibility verdict merge.",
     )
@@ -3251,6 +3396,25 @@ def main(argv: list[str] | None = None) -> int:
         help="Institution fact package root for execution constraint snapshot drafts; defaults to --root.",
     )
     args = parser.parse_args(argv)
+
+    if args.audit_first_batch_execution_policy_research_prep:
+        if not args.method_pm_plan_dir:
+            report = {
+                "result": "blocked",
+                "next_action": "action:prepare_execution_policy_research",
+                "issues": ["missing_method_pm_plan_dir_for_execution_policy_research_prep"],
+            }
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 1
+        fact_root = args.institution_fact_root or args.root
+        report = audit_first_batch_execution_policy_research_prep(
+            args.root,
+            args.method_pm_plan_dir,
+            fact_root,
+            args.audit_first_batch_execution_policy_research_prep,
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report["result"] == "pass" else 1
 
     if args.audit_first_batch_execution_policy_archive:
         if not args.method_pm_plan_dir:

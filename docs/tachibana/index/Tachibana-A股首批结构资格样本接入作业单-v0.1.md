@@ -756,6 +756,8 @@ $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-tradi
 
 `ashare_intake_validator.py --audit-first-batch-execution-policy-archive <review-dir> --method-pm-plan-dir <plan-dir> --institution-fact-root <root>` 会把 `execution_policy_review_merge` 的结果固化为只读 `AShareExecutionPolicyArchive`。它只承接 review 层的机器态与人工态，不再新增第二轮人工输入；`archive_status` 直接承接 `review_status`，`review_required` 进入 `action:prepare_execution_policy_research`，`evidence_incomplete / carry_forward_required / blocked` 继续进入 `action:collect_additional_execution_evidence`。该层仍固定 `institution_rule_definition_allowed=false / signal_generation_allowed=false / backtest_execution_allowed=false`，也不得输出 `trade_accept / buy_signal / target_position / position_size / ashare_t1_action / limit_up_strategy / limit_down_strategy`。
 
+`ashare_intake_validator.py --audit-first-batch-execution-policy-research-prep <review-dir> --method-pm-plan-dir <plan-dir> --institution-fact-root <root>` 会把 `execution_policy_archive` 的逐候选结果继续固化为只读 `AShareExecutionPolicyResearchPrep`。它不新增人工输入，也不定义制度规则；`research_prep_status` 直接承接 `archive_status`，其中 `review_required` 只表示该候选可以进入 `action:prepare_execution_policy_research`，`evidence_incomplete / carry_forward_required / blocked` 继续进入 `action:collect_additional_execution_evidence`。该层仍固定 `institution_rule_definition_allowed=false / signal_generation_allowed=false / backtest_execution_allowed=false`，也不得输出 `trade_accept / buy_signal / target_position / position_size / ashare_t1_action / limit_up_strategy / limit_down_strategy`。
+
 ## Backtest Input readiness 输出字段
 
 `--audit-first-batch-backtest-input-readiness` 的输出应作为 Backtest Input 快照准备前的只读闸门：
