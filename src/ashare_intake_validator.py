@@ -148,6 +148,29 @@ MANUAL_EXECUTION_FEASIBILITY_VERDICT_FIELDS = [
     "carry_forward_required",
     "evidence_ref",
 ]
+EXECUTION_POLICY_CANDIDATE_TYPES = [
+    "t1",
+    "price_limit",
+    "suspension_resume",
+]
+MANUAL_EXECUTION_POLICY_REVIEW_STATUSES = [
+    "review_required",
+    "evidence_incomplete",
+    "carry_forward_required",
+    "blocked",
+]
+MANUAL_EXECUTION_POLICY_REVIEW_FIELDS = [
+    "ashare_sample_id",
+    "ts_code",
+    "candidate_reviews",
+]
+MANUAL_EXECUTION_POLICY_REVIEW_CANDIDATE_FIELDS = [
+    "candidate_constraint_type",
+    "review_status",
+    "review_reason",
+    "blocked_reason",
+    "evidence_ref",
+]
 
 
 def audit_ashare_institution_fact_package(data_root: str | Path) -> dict[str, Any]:
@@ -1163,6 +1186,360 @@ def audit_first_batch_execution_feasibility_outcomes(
     }
 
 
+def audit_first_batch_execution_policy_candidates(
+    data_root: str | Path,
+    plan_dir: str | Path,
+    institution_fact_root: str | Path,
+    verdict_dir: str | Path,
+) -> dict[str, Any]:
+    outcome_report = audit_first_batch_execution_feasibility_outcomes(
+        data_root,
+        plan_dir,
+        institution_fact_root,
+        verdict_dir,
+    )
+    if outcome_report["result"] != "pass":
+        return {
+            "result": "blocked",
+            "execution_policy_candidate_count": 0,
+            "execution_policy_candidates": [],
+            "execution_policy_candidate_blocked_count": 0,
+            "execution_policy_candidate_blocked_items": [],
+            "candidate_status_counts": {},
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": outcome_report["next_action"],
+            "issues": outcome_report["issues"],
+            "execution_feasibility_outcomes_report": outcome_report,
+        }
+
+    snapshots_by_sample = _execution_constraint_snapshot_index_from_outcome_report(outcome_report)
+    candidates: list[dict[str, Any]] = []
+    blocked_items: list[dict[str, Any]] = []
+    for outcome in outcome_report.get("execution_feasibility_outcomes", []):
+        feasibility_status = str(outcome.get("feasibility_status"))
+        if feasibility_status in {"blocked", "carry_forward_required", "not_evaluated"}:
+            blocked_items.append(_execution_policy_candidate_blocked_item(outcome))
+            continue
+        if feasibility_status not in {"executable", "constrained"}:
+            blocked_items.append(
+                {
+                    "ashare_sample_id": outcome.get("ashare_sample_id"),
+                    "ts_code": outcome.get("ts_code"),
+                    "feasibility_status": feasibility_status,
+                    "issues": [f"execution_policy_candidates_invalid_outcome_status:{feasibility_status}"],
+                    "next_action": "action:review_execution_feasibility_verdicts",
+                }
+            )
+            continue
+        snapshot = snapshots_by_sample.get(str(outcome.get("ashare_sample_id")))
+        if snapshot is None:
+            blocked_items.append(
+                {
+                    "ashare_sample_id": outcome.get("ashare_sample_id"),
+                    "ts_code": outcome.get("ts_code"),
+                    "feasibility_status": feasibility_status,
+                    "issues": ["execution_policy_candidates_missing_constraint_snapshot"],
+                    "next_action": "action:collect_additional_execution_evidence",
+                }
+            )
+            continue
+        candidates.extend(_execution_policy_candidate_items(outcome, snapshot))
+
+    return {
+        "result": "pass",
+        "execution_policy_candidate_count": len(candidates),
+        "execution_policy_candidates": candidates,
+        "execution_policy_candidate_blocked_count": len(blocked_items),
+        "execution_policy_candidate_blocked_items": blocked_items,
+        "candidate_status_counts": _count_by_field(candidates, "candidate_status"),
+        "institution_rule_definition_allowed": False,
+        "signal_generation_allowed": False,
+        "backtest_execution_allowed": False,
+        "next_action": _execution_policy_candidate_report_next_action(candidates, blocked_items),
+        "issues": [],
+        "execution_feasibility_outcomes_report": outcome_report,
+    }
+
+
+def audit_execution_policy_review_draft_contract(draft: dict[str, Any]) -> dict[str, Any]:
+    issues: list[str] = []
+    for field in ["ashare_sample_id", "ts_code", "candidate_reviews"]:
+        if field not in draft:
+            issues.append(f"execution_policy_review_missing_field:{field}")
+
+    unexpected_fields = sorted(set(draft.keys()) - set(MANUAL_EXECUTION_POLICY_REVIEW_FIELDS))
+    for field in unexpected_fields:
+        issues.append(f"execution_policy_review_unexpected_field:{field}")
+
+    forbidden_fields = sorted(FORBIDDEN_FIELDS.intersection(draft.keys()))
+    for field in forbidden_fields:
+        issues.append(f"execution_policy_review_forbidden_field:{field}")
+
+    candidate_reviews = draft.get("candidate_reviews")
+    if not isinstance(candidate_reviews, list) or not candidate_reviews:
+        issues.append("execution_policy_review_requires_candidate_reviews")
+        candidate_reviews = []
+
+    seen_types: set[str] = set()
+    for review in candidate_reviews:
+        if not isinstance(review, dict):
+            issues.append("execution_policy_review_candidate_entry_must_be_object")
+            continue
+        unexpected_candidate_fields = sorted(
+            set(review.keys()) - set(MANUAL_EXECUTION_POLICY_REVIEW_CANDIDATE_FIELDS)
+        )
+        for field in unexpected_candidate_fields:
+            issues.append(f"execution_policy_review_unexpected_candidate_field:{field}")
+        forbidden_candidate_fields = sorted(FORBIDDEN_FIELDS.intersection(review.keys()))
+        for field in forbidden_candidate_fields:
+            issues.append(f"execution_policy_review_forbidden_candidate_field:{field}")
+        for field in ["candidate_constraint_type", "review_status", "review_reason"]:
+            if field not in review:
+                issues.append(f"execution_policy_review_missing_candidate_field:{field}")
+
+        candidate_constraint_type = review.get("candidate_constraint_type")
+        if candidate_constraint_type not in EXECUTION_POLICY_CANDIDATE_TYPES:
+            issues.append(
+                f"execution_policy_review_invalid_candidate_constraint_type:{candidate_constraint_type}"
+            )
+        elif str(candidate_constraint_type) in seen_types:
+            issues.append(
+                f"execution_policy_review_duplicate_candidate_constraint_type:{candidate_constraint_type}"
+            )
+        else:
+            seen_types.add(str(candidate_constraint_type))
+
+        review_status = review.get("review_status")
+        if review_status not in MANUAL_EXECUTION_POLICY_REVIEW_STATUSES:
+            issues.append(f"execution_policy_review_invalid_review_status:{review_status}")
+
+        review_reason = review.get("review_reason")
+        if not isinstance(review_reason, list) or not review_reason:
+            issues.append("execution_policy_review_requires_review_reason")
+
+        blocked_reason = review.get("blocked_reason")
+        if blocked_reason is not None and not isinstance(blocked_reason, list):
+            issues.append("execution_policy_review_requires_blocked_reason_list")
+
+        evidence_ref = review.get("evidence_ref")
+        if evidence_ref is not None and not isinstance(evidence_ref, list):
+            issues.append("execution_policy_review_requires_evidence_ref_list")
+
+    result = "pass" if not issues else "blocked"
+    return {
+        "result": result,
+        "next_action": "action:review_execution_policy_archive"
+        if result == "pass"
+        else "action:review_execution_policy_candidates",
+        "required_fields_checked": MANUAL_EXECUTION_POLICY_REVIEW_FIELDS,
+        "required_candidate_fields_checked": MANUAL_EXECUTION_POLICY_REVIEW_CANDIDATE_FIELDS,
+        "allowed_candidate_constraint_types": EXECUTION_POLICY_CANDIDATE_TYPES,
+        "allowed_review_statuses": MANUAL_EXECUTION_POLICY_REVIEW_STATUSES,
+        "issues": _unique_preserve_order(issues),
+    }
+
+
+def audit_first_batch_execution_policy_review_merge(
+    data_root: str | Path,
+    plan_dir: str | Path,
+    institution_fact_root: str | Path,
+    review_dir: str | Path,
+) -> dict[str, Any]:
+    verdict_dir = _execution_feasibility_verdict_dir_for_policy_review(Path(review_dir), Path(plan_dir))
+    candidate_report = audit_first_batch_execution_policy_candidates(
+        data_root,
+        plan_dir,
+        institution_fact_root,
+        verdict_dir,
+    )
+    if candidate_report["result"] != "pass":
+        return {
+            "result": "blocked",
+            "execution_policy_review_count": 0,
+            "execution_policy_reviews": [],
+            "execution_policy_review_blocked_count": 0,
+            "execution_policy_review_blocked_items": [],
+            "execution_policy_review_unmatched_count": 0,
+            "execution_policy_review_unmatched_items": [],
+            "review_status_counts": {},
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": candidate_report["next_action"],
+            "issues": candidate_report["issues"],
+            "execution_policy_candidates_report": candidate_report,
+        }
+
+    review_index = _execution_policy_review_index(Path(review_dir))
+    review_records: list[dict[str, Any]] = []
+    fatal_blocked_items: list[dict[str, Any]] = []
+    passthrough_blocked_items = list(candidate_report.get("execution_policy_candidate_blocked_items", []))
+    unmatched_items: list[dict[str, Any]] = []
+    invalid_samples: set[str] = set()
+
+    candidate_groups: dict[str, list[dict[str, Any]]] = {}
+    for candidate in candidate_report.get("execution_policy_candidates", []):
+        if not isinstance(candidate, dict):
+            continue
+        sample_id = str(candidate.get("ashare_sample_id", ""))
+        if sample_id:
+            candidate_groups.setdefault(sample_id, []).append(candidate)
+
+    for sample_id, candidates in candidate_groups.items():
+        required_candidates = [
+            candidate
+            for candidate in candidates
+            if _execution_policy_candidate_requires_manual_review(candidate)
+        ]
+        sample_review = review_index.get(sample_id)
+        candidate_review_index: dict[str, dict[str, Any]] = {}
+        if required_candidates:
+            if sample_review is None:
+                for candidate in required_candidates:
+                    unmatched_items.append(_execution_policy_review_unmatched_item(candidate))
+                continue
+
+            contract = audit_execution_policy_review_draft_contract(sample_review)
+            if contract["result"] != "pass":
+                fatal_blocked_items.append(
+                    _execution_policy_review_contract_blocked_item(candidates[0], sample_review, contract)
+                )
+                invalid_samples.add(sample_id)
+                continue
+            if sample_review.get("ts_code") != candidates[0].get("ts_code"):
+                fatal_blocked_items.append(
+                    _execution_policy_review_contract_blocked_item(
+                        candidates[0],
+                        sample_review,
+                        {
+                            "issues": ["execution_policy_review_ts_code_mismatch"],
+                            "next_action": "action:review_execution_policy_candidates",
+                        },
+                    )
+                )
+                invalid_samples.add(sample_id)
+                continue
+            candidate_review_index = _execution_policy_review_candidate_index(sample_review)
+
+        if sample_id in invalid_samples:
+            continue
+
+        for candidate in candidates:
+            if candidate.get("candidate_status") == "not_triggered_in_fact_window":
+                review_records.append(_execution_policy_auto_review_item(candidate))
+                continue
+            candidate_constraint_type = str(candidate.get("candidate_constraint_type"))
+            manual_review = candidate_review_index.get(candidate_constraint_type)
+            if manual_review is None:
+                unmatched_items.append(_execution_policy_review_unmatched_item(candidate))
+                continue
+            review_records.append(_execution_policy_manual_review_item(candidate, manual_review))
+
+    blocked_items = [*fatal_blocked_items, *passthrough_blocked_items]
+    result = "pass" if not fatal_blocked_items and not unmatched_items and (review_records or passthrough_blocked_items) else "blocked"
+    return {
+        "result": result,
+        "execution_policy_review_count": len(review_records) if result == "pass" else 0,
+        "execution_policy_reviews": review_records if result == "pass" else [],
+        "execution_policy_review_blocked_count": len(blocked_items),
+        "execution_policy_review_blocked_items": blocked_items,
+        "execution_policy_review_unmatched_count": len(unmatched_items),
+        "execution_policy_review_unmatched_items": unmatched_items,
+        "review_status_counts": _count_by_field(review_records, "review_status") if result == "pass" else {},
+        "institution_rule_definition_allowed": False,
+        "signal_generation_allowed": False,
+        "backtest_execution_allowed": False,
+        "next_action": _execution_policy_review_report_next_action(
+            review_records,
+            fatal_blocked_items,
+            passthrough_blocked_items,
+            unmatched_items,
+        ),
+        "issues": [] if result == "pass" else ["execution_policy_review_requires_matching_valid_manual_review"],
+        "execution_policy_candidates_report": candidate_report,
+    }
+
+
+def audit_first_batch_execution_policy_archive(
+    data_root: str | Path,
+    plan_dir: str | Path,
+    institution_fact_root: str | Path,
+    review_dir: str | Path,
+) -> dict[str, Any]:
+    review_report = audit_first_batch_execution_policy_review_merge(
+        data_root,
+        plan_dir,
+        institution_fact_root,
+        review_dir,
+    )
+    if review_report["result"] != "pass":
+        return {
+            "result": "blocked",
+            "execution_policy_archive_count": 0,
+            "execution_policy_archives": [],
+            "execution_policy_archive_blocked_count": 0,
+            "execution_policy_archive_blocked_items": [],
+            "archive_status_counts": {},
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": review_report["next_action"],
+            "issues": ["execution_policy_archive_requires_valid_execution_policy_reviews"],
+            "execution_policy_review_report": review_report,
+        }
+
+    archives: list[dict[str, Any]] = []
+    blocked_items = list(review_report.get("execution_policy_review_blocked_items", []))
+    invalid_statuses: list[dict[str, Any]] = []
+    for review in review_report.get("execution_policy_reviews", []):
+        archive_item = _execution_policy_archive_item(review)
+        if archive_item is None:
+            invalid_statuses.append(
+                {
+                    "ashare_sample_id": review.get("ashare_sample_id"),
+                    "ts_code": review.get("ts_code"),
+                    "candidate_constraint_type": review.get("candidate_constraint_type"),
+                    "issues": [f"execution_policy_archive_invalid_review_status:{review.get('review_status')}"],
+                    "next_action": "action:review_execution_policy_archive",
+                }
+            )
+            continue
+        archives.append(archive_item)
+
+    if invalid_statuses:
+        return {
+            "result": "blocked",
+            "execution_policy_archive_count": 0,
+            "execution_policy_archives": [],
+            "execution_policy_archive_blocked_count": len(blocked_items) + len(invalid_statuses),
+            "execution_policy_archive_blocked_items": [*blocked_items, *invalid_statuses],
+            "archive_status_counts": {},
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:review_execution_policy_archive",
+            "issues": ["execution_policy_archive_requires_valid_execution_policy_reviews"],
+            "execution_policy_review_report": review_report,
+        }
+
+    return {
+        "result": "pass",
+        "execution_policy_archive_count": len(archives),
+        "execution_policy_archives": archives,
+        "execution_policy_archive_blocked_count": len(blocked_items),
+        "execution_policy_archive_blocked_items": blocked_items,
+        "archive_status_counts": _count_by_field(archives, "archive_status"),
+        "institution_rule_definition_allowed": False,
+        "signal_generation_allowed": False,
+        "backtest_execution_allowed": False,
+        "next_action": _execution_policy_archive_report_next_action(archives, blocked_items),
+        "issues": [],
+        "execution_policy_review_report": review_report,
+    }
+
+
 def _method_pm_plan_draft_index(plan_dir: Path) -> dict[str, dict[str, Any]]:
     if not plan_dir.exists() or not plan_dir.is_dir():
         return {}
@@ -1639,12 +2016,375 @@ def _execution_feasibility_outcome_report_next_action(outcomes: list[dict[str, A
     return "action:review_execution_feasibility_verdicts"
 
 
-def _status_counts(items: list[dict[str, Any]]) -> dict[str, int]:
+def _execution_constraint_snapshot_index_from_outcome_report(
+    outcome_report: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    merge_report = outcome_report.get("execution_feasibility_verdict_merge", {})
+    if not isinstance(merge_report, dict):
+        return {}
+    draft_report = merge_report.get("execution_feasibility_verdict_drafts", {})
+    if not isinstance(draft_report, dict):
+        return {}
+    gate_report = draft_report.get("execution_feasibility_gate", {})
+    if not isinstance(gate_report, dict):
+        return {}
+    snapshot_report = gate_report.get("execution_constraint_snapshots", {})
+    if not isinstance(snapshot_report, dict):
+        return {}
+    snapshots = snapshot_report.get("execution_constraint_snapshots", [])
+    if not isinstance(snapshots, list):
+        return {}
+    return {
+        str(snapshot.get("ashare_sample_id")): snapshot
+        for snapshot in snapshots
+        if isinstance(snapshot, dict) and snapshot.get("ashare_sample_id")
+    }
+
+
+def _execution_policy_candidate_items(
+    outcome: dict[str, Any],
+    snapshot: dict[str, Any],
+) -> list[dict[str, Any]]:
+    evidence_ref = _unique_preserve_order(
+        [
+            *_list_value(outcome.get("evidence_ref")),
+            *_list_value(snapshot.get("evidence_ref")),
+        ]
+    )
+    boundary_warning = _unique_preserve_order(
+        [
+            *_list_value(outcome.get("boundary_warning")),
+            *_list_value(snapshot.get("boundary_warning")),
+            "execution_policy_candidate_is_not_rule_definition",
+            "execution_policy_candidate_must_not_emit_signal",
+            "execution_policy_candidate_must_not_set_position",
+        ]
+    )
+    base = {
+        "record_type": "AShareExecutionPolicyCandidateAudit",
+        "ashare_institution_gate_id": outcome.get("ashare_institution_gate_id"),
+        "ashare_sample_id": outcome.get("ashare_sample_id"),
+        "ts_code": outcome.get("ts_code"),
+        "planned_event": outcome.get("planned_event"),
+        "feasibility_status": outcome.get("feasibility_status"),
+        "constraint_snapshot_ref": outcome.get("constraint_snapshot_ref"),
+        "evidence_ref": evidence_ref,
+        "boundary_warning": boundary_warning,
+        "institution_rule_definition_allowed": False,
+        "signal_generation_allowed": False,
+        "backtest_execution_allowed": False,
+        "next_action": "action:review_execution_policy_candidates",
+    }
+
+    t1_required = _planned_event_requires_t1_review(outcome.get("planned_event"))
+    price_limit_unknown = snapshot.get("close_limit_status") == "unknown" or snapshot.get("touched_limit_status") == "unknown"
+    suspension_required = bool(snapshot.get("is_suspended"))
+    return [
+        {
+            **base,
+            "candidate_constraint_type": "t1",
+            "candidate_status": "review_required" if t1_required else "not_triggered_in_fact_window",
+            "candidate_reason": ["planned_event_requires_t1_review"]
+            if t1_required
+            else ["planned_event_does_not_trigger_t1_review"],
+        },
+        {
+            **base,
+            "candidate_constraint_type": "price_limit",
+            "candidate_status": "evidence_incomplete" if price_limit_unknown else "review_required",
+            "candidate_reason": ["price_limit_fact_unknown_on_planned_event"]
+            if price_limit_unknown
+            else ["price_limit_fact_ready_for_candidate_review"],
+        },
+        {
+            **base,
+            "candidate_constraint_type": "suspension_resume",
+            "candidate_status": "review_required" if suspension_required else "not_triggered_in_fact_window",
+            "candidate_reason": ["suspension_or_resume_fact_present_on_planned_event"]
+            if suspension_required
+            else ["no_suspension_or_resume_fact_in_window"],
+        },
+    ]
+
+
+def _execution_policy_review_index(review_dir: Path) -> dict[str, dict[str, Any]]:
+    if not review_dir.exists() or not review_dir.is_dir():
+        return {}
+    reviews: dict[str, dict[str, Any]] = {}
+    for path in sorted(review_dir.glob("*.json")):
+        payload = _read_json_object(path)
+        if payload is None:
+            continue
+        sample_id = payload.get("ashare_sample_id")
+        if sample_id:
+            reviews[str(sample_id)] = payload
+    return reviews
+
+
+def _execution_feasibility_verdict_dir_for_policy_review(review_dir: Path, plan_dir: Path) -> Path:
+    candidates = [
+        review_dir.parent / "execution-verdicts",
+        review_dir.parent / "execution-feasibility-verdicts",
+        review_dir.parent / "execution-feasibility-verdicts" / review_dir.name,
+        plan_dir.parent.parent / "execution-feasibility-verdicts" / plan_dir.name,
+    ]
+    if "execution-policy-reviews" in review_dir.parts:
+        replaced = Path(
+            *[
+                "execution-feasibility-verdicts" if part == "execution-policy-reviews" else part
+                for part in review_dir.parts
+            ]
+        )
+        candidates.insert(0, replaced)
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_dir():
+            return candidate
+    return review_dir
+
+
+def _execution_policy_review_candidate_index(review: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    candidate_reviews = review.get("candidate_reviews")
+    if not isinstance(candidate_reviews, list):
+        return {}
+    return {
+        str(candidate_review.get("candidate_constraint_type")): candidate_review
+        for candidate_review in candidate_reviews
+        if isinstance(candidate_review, dict) and candidate_review.get("candidate_constraint_type")
+    }
+
+
+def _execution_policy_candidate_requires_manual_review(candidate: dict[str, Any]) -> bool:
+    return str(candidate.get("candidate_status")) in {"review_required", "evidence_incomplete"}
+
+
+def _execution_policy_review_boundary_warning(candidate: dict[str, Any]) -> list[str]:
+    return _unique_preserve_order(
+        [
+            *_list_value(candidate.get("boundary_warning")),
+            "execution_policy_review_is_not_rule_definition",
+            "execution_policy_review_must_not_emit_signal",
+            "execution_policy_review_must_not_set_position",
+        ]
+    )
+
+
+def _execution_policy_manual_review_item(
+    candidate: dict[str, Any],
+    manual_review: dict[str, Any],
+) -> dict[str, Any]:
+    review_status = str(manual_review.get("review_status"))
+    return {
+        "record_type": "AShareExecutionPolicyCandidateReview",
+        "ashare_institution_gate_id": candidate.get("ashare_institution_gate_id"),
+        "ashare_sample_id": candidate.get("ashare_sample_id"),
+        "ts_code": candidate.get("ts_code"),
+        "planned_event": candidate.get("planned_event"),
+        "feasibility_status": candidate.get("feasibility_status"),
+        "candidate_constraint_type": candidate.get("candidate_constraint_type"),
+        "machine_candidate_status": candidate.get("candidate_status"),
+        "review_status": review_status,
+        "review_reason": _list_value(manual_review.get("review_reason")),
+        "blocked_reason": _list_value(manual_review.get("blocked_reason")),
+        "constraint_snapshot_ref": candidate.get("constraint_snapshot_ref"),
+        "evidence_ref": _unique_preserve_order(
+            [
+                *_list_value(candidate.get("evidence_ref")),
+                *_list_value(manual_review.get("evidence_ref")),
+            ]
+        ),
+        "review_source": "manual_review",
+        "boundary_warning": _execution_policy_review_boundary_warning(candidate),
+        "institution_rule_definition_allowed": False,
+        "signal_generation_allowed": False,
+        "backtest_execution_allowed": False,
+        "next_action": _execution_policy_review_item_next_action(review_status),
+    }
+
+
+def _execution_policy_auto_review_item(candidate: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "record_type": "AShareExecutionPolicyCandidateReview",
+        "ashare_institution_gate_id": candidate.get("ashare_institution_gate_id"),
+        "ashare_sample_id": candidate.get("ashare_sample_id"),
+        "ts_code": candidate.get("ts_code"),
+        "planned_event": candidate.get("planned_event"),
+        "feasibility_status": candidate.get("feasibility_status"),
+        "candidate_constraint_type": candidate.get("candidate_constraint_type"),
+        "machine_candidate_status": candidate.get("candidate_status"),
+        "review_status": "carry_forward_required",
+        "review_reason": ["candidate_not_triggered_in_fact_window_auto_carry_forward"],
+        "blocked_reason": [],
+        "constraint_snapshot_ref": candidate.get("constraint_snapshot_ref"),
+        "evidence_ref": _list_value(candidate.get("evidence_ref")),
+        "review_source": "auto_carry_forward_from_not_triggered_fact_window",
+        "boundary_warning": _execution_policy_review_boundary_warning(candidate),
+        "institution_rule_definition_allowed": False,
+        "signal_generation_allowed": False,
+        "backtest_execution_allowed": False,
+        "next_action": "action:review_execution_policy_archive",
+    }
+
+
+def _execution_policy_review_item_next_action(review_status: str) -> str:
+    if review_status == "blocked":
+        return "action:collect_additional_execution_evidence"
+    return "action:review_execution_policy_archive"
+
+
+def _execution_policy_archive_item(review: dict[str, Any]) -> dict[str, Any] | None:
+    review_status = str(review.get("review_status"))
+    archive_reason_by_status = {
+        "review_required": ["execution_policy_candidate_archived_for_policy_research"],
+        "evidence_incomplete": ["execution_policy_candidate_archived_with_incomplete_evidence"],
+        "carry_forward_required": ["execution_policy_candidate_archived_for_carry_forward"],
+        "blocked": ["execution_policy_candidate_archived_as_blocked"],
+    }
+    next_action_by_status = {
+        "review_required": "action:prepare_execution_policy_research",
+        "evidence_incomplete": "action:collect_additional_execution_evidence",
+        "carry_forward_required": "action:collect_additional_execution_evidence",
+        "blocked": "action:collect_additional_execution_evidence",
+    }
+    if review_status not in archive_reason_by_status:
+        return None
+    return {
+        "record_type": "AShareExecutionPolicyArchive",
+        "ashare_institution_gate_id": review.get("ashare_institution_gate_id"),
+        "ashare_sample_id": review.get("ashare_sample_id"),
+        "ts_code": review.get("ts_code"),
+        "planned_event": review.get("planned_event"),
+        "feasibility_status": review.get("feasibility_status"),
+        "candidate_constraint_type": review.get("candidate_constraint_type"),
+        "machine_candidate_status": review.get("machine_candidate_status"),
+        "review_status": review_status,
+        "archive_status": review_status,
+        "archive_reason": archive_reason_by_status[review_status],
+        "blocked_reason": _list_value(review.get("blocked_reason")),
+        "constraint_snapshot_ref": review.get("constraint_snapshot_ref"),
+        "evidence_ref": _list_value(review.get("evidence_ref")),
+        "review_source": review.get("review_source"),
+        "archive_source": "execution_policy_review_merge",
+        "boundary_warning": _unique_preserve_order(
+            [
+                *_list_value(review.get("boundary_warning")),
+                "execution_policy_archive_is_not_rule_definition",
+                "execution_policy_archive_must_not_emit_signal",
+                "execution_policy_archive_must_not_set_position",
+            ]
+        ),
+        "institution_rule_definition_allowed": False,
+        "signal_generation_allowed": False,
+        "backtest_execution_allowed": False,
+        "next_action": next_action_by_status[review_status],
+    }
+
+
+def _execution_policy_archive_report_next_action(
+    archives: list[dict[str, Any]],
+    blocked_items: list[dict[str, Any]],
+) -> str:
+    if any(str(item.get("archive_status")) == "review_required" for item in archives):
+        return "action:prepare_execution_policy_research"
+    if archives or blocked_items:
+        return "action:collect_additional_execution_evidence"
+    return "action:review_execution_policy_archive"
+
+
+def _execution_policy_review_contract_blocked_item(
+    candidate: dict[str, Any],
+    review: dict[str, Any],
+    contract: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "ashare_sample_id": candidate.get("ashare_sample_id"),
+        "ts_code": candidate.get("ts_code"),
+        "feasibility_status": candidate.get("feasibility_status"),
+        "issues": contract.get("issues", []),
+        "next_action": contract.get("next_action", "action:review_execution_policy_candidates"),
+        "review_ts_code": review.get("ts_code"),
+    }
+
+
+def _execution_policy_review_unmatched_item(candidate: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "ashare_sample_id": candidate.get("ashare_sample_id"),
+        "ts_code": candidate.get("ts_code"),
+        "candidate_constraint_type": candidate.get("candidate_constraint_type"),
+        "machine_candidate_status": candidate.get("candidate_status"),
+        "issues": [
+            f"execution_policy_review_missing_required_candidate_review:{candidate.get('candidate_constraint_type')}"
+        ],
+        "next_action": "action:review_execution_policy_candidates",
+    }
+
+
+def _planned_event_requires_t1_review(planned_event: Any) -> bool:
+    return str(planned_event or "") not in {"", "hold", "wait", "lock_candidate"}
+
+
+def _execution_policy_candidate_blocked_item(outcome: dict[str, Any]) -> dict[str, Any]:
+    feasibility_status = str(outcome.get("feasibility_status"))
+    issue_by_status = {
+        "carry_forward_required": "execution_policy_candidates_require_additional_execution_evidence",
+        "blocked": "execution_policy_candidates_blocked_by_outcome",
+        "not_evaluated": "execution_policy_candidates_require_manual_verdict",
+    }
+    next_action_by_status = {
+        "carry_forward_required": "action:collect_additional_execution_evidence",
+        "blocked": "action:collect_additional_execution_evidence",
+        "not_evaluated": "action:review_execution_feasibility_verdicts",
+    }
+    return {
+        "ashare_sample_id": outcome.get("ashare_sample_id"),
+        "ts_code": outcome.get("ts_code"),
+        "feasibility_status": feasibility_status,
+        "issues": [issue_by_status.get(feasibility_status, "execution_policy_candidates_invalid_outcome_status")],
+        "next_action": next_action_by_status.get(
+            feasibility_status,
+            "action:review_execution_feasibility_verdicts",
+        ),
+    }
+
+
+def _execution_policy_candidate_report_next_action(
+    candidates: list[dict[str, Any]],
+    blocked_items: list[dict[str, Any]],
+) -> str:
+    if candidates:
+        return "action:review_execution_policy_candidates"
+    statuses = {str(item.get("feasibility_status")) for item in blocked_items}
+    if statuses.intersection({"carry_forward_required", "blocked"}):
+        return "action:collect_additional_execution_evidence"
+    if statuses == {"not_evaluated"}:
+        return "action:review_execution_feasibility_verdicts"
+    return "action:review_execution_feasibility_verdicts"
+
+
+def _execution_policy_review_report_next_action(
+    review_records: list[dict[str, Any]],
+    fatal_blocked_items: list[dict[str, Any]],
+    passthrough_blocked_items: list[dict[str, Any]],
+    unmatched_items: list[dict[str, Any]],
+) -> str:
+    if fatal_blocked_items or unmatched_items:
+        return "action:review_execution_policy_candidates"
+    if review_records:
+        return "action:review_execution_policy_archive"
+    if passthrough_blocked_items:
+        return "action:collect_additional_execution_evidence"
+    return "action:review_execution_policy_candidates"
+
+
+def _count_by_field(items: list[dict[str, Any]], field: str) -> dict[str, int]:
     counts: dict[str, int] = {}
     for item in items:
-        status = str(item.get("feasibility_status"))
-        counts[status] = counts.get(status, 0) + 1
+        value = str(item.get(field))
+        counts[value] = counts.get(value, 0) + 1
     return counts
+
+
+def _status_counts(items: list[dict[str, Any]]) -> dict[str, int]:
+    return _count_by_field(items, "feasibility_status")
 
 
 def _constraint_types_from_fact(fact: dict[str, str]) -> list[str]:
@@ -2491,6 +3231,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Build read-only execution feasibility outcome records from merged manual verdicts.",
     )
     parser.add_argument(
+        "--audit-first-batch-execution-policy-candidates",
+        help="Build read-only execution policy candidate audit records from execution feasibility outcomes.",
+    )
+    parser.add_argument(
+        "--audit-first-batch-execution-policy-review-merge",
+        help="Merge per-sample manual execution policy review JSON files into read-only candidate review records.",
+    )
+    parser.add_argument(
+        "--audit-first-batch-execution-policy-archive",
+        help="Build read-only execution policy archive records from merged candidate reviews.",
+    )
+    parser.add_argument(
         "--method-pm-plan-dir",
         help="Method/PM plan directory required by execution-feasibility verdict merge.",
     )
@@ -2499,6 +3251,63 @@ def main(argv: list[str] | None = None) -> int:
         help="Institution fact package root for execution constraint snapshot drafts; defaults to --root.",
     )
     args = parser.parse_args(argv)
+
+    if args.audit_first_batch_execution_policy_archive:
+        if not args.method_pm_plan_dir:
+            report = {
+                "result": "blocked",
+                "next_action": "action:review_execution_policy_archive",
+                "issues": ["missing_method_pm_plan_dir_for_execution_policy_archive"],
+            }
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 1
+        fact_root = args.institution_fact_root or args.root
+        report = audit_first_batch_execution_policy_archive(
+            args.root,
+            args.method_pm_plan_dir,
+            fact_root,
+            args.audit_first_batch_execution_policy_archive,
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report["result"] == "pass" else 1
+
+    if args.audit_first_batch_execution_policy_review_merge:
+        if not args.method_pm_plan_dir:
+            report = {
+                "result": "blocked",
+                "next_action": "action:review_execution_policy_candidates",
+                "issues": ["missing_method_pm_plan_dir_for_execution_policy_review_merge"],
+            }
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 1
+        fact_root = args.institution_fact_root or args.root
+        report = audit_first_batch_execution_policy_review_merge(
+            args.root,
+            args.method_pm_plan_dir,
+            fact_root,
+            args.audit_first_batch_execution_policy_review_merge,
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report["result"] == "pass" else 1
+
+    if args.audit_first_batch_execution_policy_candidates:
+        if not args.method_pm_plan_dir:
+            report = {
+                "result": "blocked",
+                "next_action": "action:review_execution_feasibility_verdicts",
+                "issues": ["missing_method_pm_plan_dir_for_execution_policy_candidates"],
+            }
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 1
+        fact_root = args.institution_fact_root or args.root
+        report = audit_first_batch_execution_policy_candidates(
+            args.root,
+            args.method_pm_plan_dir,
+            fact_root,
+            args.audit_first_batch_execution_policy_candidates,
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report["result"] == "pass" else 1
 
     if args.audit_first_batch_execution_feasibility_outcomes:
         if not args.method_pm_plan_dir:

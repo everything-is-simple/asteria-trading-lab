@@ -13,6 +13,9 @@ from ashare_intake_validator import (
     audit_ashare_institution_fact_package,
     audit_first_batch_execution_feasibility_gate,
     audit_first_batch_execution_feasibility_outcomes,
+    audit_first_batch_execution_policy_archive,
+    audit_first_batch_execution_policy_candidates,
+    audit_first_batch_execution_policy_review_merge,
     audit_first_batch_execution_feasibility_verdict_merge,
     audit_first_batch_execution_feasibility_verdicts,
     audit_first_batch_execution_constraint_snapshots,
@@ -85,6 +88,100 @@ def write_csv(path: Path, header: list[str], rows: list[list[str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [",".join(header), *[",".join(row) for row in rows]]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_execution_policy_case(
+    tmp_path: Path,
+    *,
+    ts_code: str = "000001.SZ",
+    execution_event_type: str = "open_center",
+    method_action: str = "trend_probe_entry",
+    pm_action: str | None = None,
+    feasibility_status: str = "executable",
+    verdict_reason: list[str] | None = None,
+    blocked_reason: list[str] | None = None,
+    carry_forward_required: bool | None = None,
+    close_limit_status: str = "unknown",
+    touched_limit_status: str = "unknown",
+    is_suspended: str = "false",
+) -> tuple[Path, Path, Path]:
+    sample_id = f"ASHARE-{ts_code}-2026-01-05-2026-01-06"
+    plan_dir = tmp_path / "plans"
+    plan_dir.mkdir()
+    (plan_dir / f"{ts_code}-method-pm-plan.json").write_text(
+        json.dumps(
+            {
+                "ashare_sample_id": sample_id,
+                "ts_code": ts_code,
+                "method_action": method_action,
+                "method_status": "hypothesis",
+                "method_reason": ["structure_suitable_but_no_action_yet"],
+                "pm_required": pm_action is not None,
+                "pm_action": pm_action,
+                "execution_intent": "replay_hypothesis_plan",
+                "execution_event_type": execution_event_type,
+                "method_evidence_ref": ["manual:method-review-001"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    fact_root = tmp_path / "facts"
+    write_csv(
+        fact_root / "ashare" / "institution-facts-v0.1" / f"{ts_code}.csv",
+        INSTITUTION_FACT_HEADER,
+        [[
+            ts_code,
+            "2026-01-06",
+            "true",
+            is_suspended,
+            "11.77",
+            "9.63",
+            close_limit_status,
+            touched_limit_status,
+            "100",
+            "unit-test:exchange-calendar-and-price-limit",
+        ]],
+    )
+    review_dir = tmp_path / "execution-verdicts"
+    review_dir.mkdir()
+    review_payload = {
+        "ashare_sample_id": sample_id,
+        "ts_code": ts_code,
+        "feasibility_status": feasibility_status,
+        "verdict_reason": verdict_reason or [f"manual_{feasibility_status}"],
+    }
+    if blocked_reason is not None:
+        review_payload["blocked_reason"] = blocked_reason
+    if carry_forward_required is not None:
+        review_payload["carry_forward_required"] = carry_forward_required
+    (review_dir / f"{ts_code}-execution-feasibility-verdict.json").write_text(
+        json.dumps(review_payload),
+        encoding="utf-8",
+    )
+    return plan_dir, fact_root, review_dir
+
+
+def write_execution_policy_review_file(
+    review_root: Path,
+    *,
+    sample_id: str,
+    ts_code: str,
+    candidate_reviews: list[dict[str, object]],
+    filename: str | None = None,
+) -> Path:
+    review_root.mkdir(parents=True, exist_ok=True)
+    path = review_root / (filename or f"{sample_id}.json")
+    path.write_text(
+        json.dumps(
+            {
+                "ashare_sample_id": sample_id,
+                "ts_code": ts_code,
+                "candidate_reviews": candidate_reviews,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
 
 
 class AShareIntakeValidatorTest(unittest.TestCase):
@@ -2292,6 +2389,718 @@ class AShareIntakeValidatorTest(unittest.TestCase):
         self.assertEqual(report["result"], "pass")
         self.assertEqual(report["execution_feasibility_outcomes"][0]["feasibility_status"], "constrained")
         self.assertEqual(report["execution_feasibility_outcomes"][0]["next_action"], "action:review_execution_policy_candidates")
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+
+    def test_execution_policy_candidates_emit_three_audit_records_for_executable_outcome(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, review_dir = write_execution_policy_case(
+                tmp_path,
+                feasibility_status="executable",
+            )
+
+            report = audit_first_batch_execution_policy_candidates(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_dir,
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["execution_policy_candidate_count"], 3)
+        self.assertEqual(report["execution_policy_candidate_blocked_count"], 0)
+        self.assertEqual(report["candidate_status_counts"], {"review_required": 1, "evidence_incomplete": 1, "not_triggered_in_fact_window": 1})
+        self.assertEqual(report["next_action"], "action:review_execution_policy_candidates")
+        candidates = {
+            item["candidate_constraint_type"]: item
+            for item in report["execution_policy_candidates"]
+        }
+        self.assertEqual(candidates["t1"]["candidate_status"], "review_required")
+        self.assertEqual(candidates["price_limit"]["candidate_status"], "evidence_incomplete")
+        self.assertEqual(candidates["suspension_resume"]["candidate_status"], "not_triggered_in_fact_window")
+        self.assertFalse(report["institution_rule_definition_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+        for candidate in report["execution_policy_candidates"]:
+            self.assertEqual(candidate["record_type"], "AShareExecutionPolicyCandidateAudit")
+            for forbidden_field in [
+                "buy_signal",
+                "sell_signal",
+                "trade_accept",
+                "target_position",
+                "position_size",
+                "ashare_t1_action",
+                "limit_up_strategy",
+            ]:
+                self.assertNotIn(forbidden_field, candidate)
+
+    def test_execution_policy_candidates_emit_three_audit_records_for_constrained_outcome(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, review_dir = write_execution_policy_case(
+                tmp_path,
+                execution_event_type="add_on",
+                method_action="pullback_add",
+                pm_action="add_on",
+                feasibility_status="constrained",
+                verdict_reason=["manual_constraint_confirmed"],
+                blocked_reason=["limit_state_unknown_on_planned_event"],
+            )
+
+            report = audit_first_batch_execution_policy_candidates(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_dir,
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["execution_policy_candidate_count"], 3)
+        self.assertEqual(report["candidate_status_counts"]["review_required"], 1)
+        self.assertEqual(report["next_action"], "action:review_execution_policy_candidates")
+
+    def test_execution_policy_candidates_block_items_for_carry_forward_required_outcome(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, review_dir = write_execution_policy_case(
+                tmp_path,
+                execution_event_type="lock_candidate",
+                method_action="wait_no_action",
+                pm_action="lock_candidate",
+                feasibility_status="carry_forward_required",
+                verdict_reason=["manual_followup_required"],
+                blocked_reason=["awaiting_execution_evidence"],
+                carry_forward_required=True,
+            )
+
+            report = audit_first_batch_execution_policy_candidates(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_dir,
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["execution_policy_candidate_count"], 0)
+        self.assertEqual(report["execution_policy_candidate_blocked_count"], 1)
+        self.assertEqual(
+            report["execution_policy_candidate_blocked_items"][0]["issues"],
+            ["execution_policy_candidates_require_additional_execution_evidence"],
+        )
+        self.assertEqual(report["next_action"], "action:collect_additional_execution_evidence")
+
+    def test_execution_policy_candidates_return_verdict_review_when_not_evaluated(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, review_dir = write_execution_policy_case(
+                tmp_path,
+                feasibility_status="not_evaluated",
+                verdict_reason=["manual_review_left_open"],
+            )
+
+            report = audit_first_batch_execution_policy_candidates(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_dir,
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["execution_policy_candidate_count"], 0)
+        self.assertEqual(report["execution_policy_candidate_blocked_count"], 1)
+        self.assertEqual(
+            report["execution_policy_candidate_blocked_items"][0]["issues"],
+            ["execution_policy_candidates_require_manual_verdict"],
+        )
+        self.assertEqual(report["next_action"], "action:review_execution_feasibility_verdicts")
+
+    def test_cli_runs_execution_policy_candidates(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, review_dir = write_execution_policy_case(
+                tmp_path,
+                execution_event_type="add_on",
+                method_action="pullback_add",
+                pm_action="add_on",
+                feasibility_status="constrained",
+                verdict_reason=["manual_constraint_confirmed"],
+                blocked_reason=["limit_state_unknown_on_planned_event"],
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "ashare_intake_validator",
+                    "--root",
+                    str(fixture_root),
+                    "--audit-first-batch-execution-policy-candidates",
+                    str(review_dir),
+                    "--method-pm-plan-dir",
+                    str(plan_dir),
+                    "--institution-fact-root",
+                    str(fact_root),
+                ],
+                cwd=ROOT,
+                env={"PYTHONPATH": str(ROOT / "src")},
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        report = json.loads(completed.stdout)
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["execution_policy_candidate_count"], 3)
+        self.assertEqual(report["candidate_status_counts"]["review_required"], 1)
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+
+    def test_execution_policy_review_merge_creates_manual_and_auto_review_records(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, verdict_dir = write_execution_policy_case(
+                tmp_path,
+                feasibility_status="executable",
+            )
+            review_root = tmp_path / "policy-reviews"
+            write_execution_policy_review_file(
+                review_root,
+                sample_id="ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                ts_code="000001.SZ",
+                candidate_reviews=[
+                    {
+                        "candidate_constraint_type": "t1",
+                        "review_status": "review_required",
+                        "review_reason": ["planned_event_requires_t1_policy_review"],
+                        "blocked_reason": [],
+                        "evidence_ref": ["ASHARE-CONSTRAINT-000001.SZ-2026-01-06-v0.1"],
+                    },
+                    {
+                        "candidate_constraint_type": "price_limit",
+                        "review_status": "evidence_incomplete",
+                        "review_reason": ["price_limit_state_still_unknown_on_planned_event"],
+                        "blocked_reason": [],
+                        "evidence_ref": ["ASHARE-CONSTRAINT-000001.SZ-2026-01-06-v0.1"],
+                    },
+                ],
+            )
+
+            report = audit_first_batch_execution_policy_review_merge(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_root,
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["execution_policy_review_count"], 3)
+        self.assertEqual(report["execution_policy_review_blocked_count"], 0)
+        self.assertEqual(report["execution_policy_review_unmatched_count"], 0)
+        self.assertEqual(
+            report["review_status_counts"],
+            {
+                "review_required": 1,
+                "evidence_incomplete": 1,
+                "carry_forward_required": 1,
+            },
+        )
+        self.assertEqual(report["next_action"], "action:review_execution_policy_archive")
+        reviews = {
+            item["candidate_constraint_type"]: item
+            for item in report["execution_policy_reviews"]
+        }
+        self.assertEqual(reviews["t1"]["review_source"], "manual_review")
+        self.assertEqual(reviews["price_limit"]["review_source"], "manual_review")
+        self.assertEqual(reviews["suspension_resume"]["review_source"], "auto_carry_forward_from_not_triggered_fact_window")
+        self.assertEqual(reviews["suspension_resume"]["review_status"], "carry_forward_required")
+        for review in report["execution_policy_reviews"]:
+            self.assertEqual(review["record_type"], "AShareExecutionPolicyCandidateReview")
+            for forbidden_field in [
+                "buy_signal",
+                "sell_signal",
+                "trade_accept",
+                "target_position",
+                "position_size",
+                "ashare_t1_action",
+                "limit_up_strategy",
+            ]:
+                self.assertNotIn(forbidden_field, review)
+
+    def test_execution_policy_review_merge_blocks_when_required_manual_review_missing(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, verdict_dir = write_execution_policy_case(
+                tmp_path,
+                feasibility_status="executable",
+            )
+            review_root = tmp_path / "policy-reviews"
+            write_execution_policy_review_file(
+                review_root,
+                sample_id="ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                ts_code="000001.SZ",
+                candidate_reviews=[
+                    {
+                        "candidate_constraint_type": "price_limit",
+                        "review_status": "evidence_incomplete",
+                        "review_reason": ["price_limit_state_still_unknown_on_planned_event"],
+                    }
+                ],
+            )
+
+            report = audit_first_batch_execution_policy_review_merge(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_root,
+            )
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertEqual(report["execution_policy_review_count"], 0)
+        self.assertEqual(report["execution_policy_review_unmatched_count"], 1)
+        self.assertIn(
+            "execution_policy_review_missing_required_candidate_review:t1",
+            report["execution_policy_review_unmatched_items"][0]["issues"],
+        )
+        self.assertEqual(report["next_action"], "action:review_execution_policy_candidates")
+
+    def test_execution_policy_review_merge_blocks_invalid_candidate_constraint_type(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, verdict_dir = write_execution_policy_case(
+                tmp_path,
+                feasibility_status="executable",
+            )
+            review_root = tmp_path / "policy-reviews"
+            write_execution_policy_review_file(
+                review_root,
+                sample_id="ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                ts_code="000001.SZ",
+                candidate_reviews=[
+                    {
+                        "candidate_constraint_type": "board_lot",
+                        "review_status": "review_required",
+                        "review_reason": ["unsupported_candidate_type"],
+                    },
+                    {
+                        "candidate_constraint_type": "price_limit",
+                        "review_status": "evidence_incomplete",
+                        "review_reason": ["price_limit_state_still_unknown_on_planned_event"],
+                    },
+                ],
+            )
+
+            report = audit_first_batch_execution_policy_review_merge(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_root,
+            )
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertEqual(report["execution_policy_review_blocked_count"], 1)
+        self.assertIn(
+            "execution_policy_review_invalid_candidate_constraint_type:board_lot",
+            report["execution_policy_review_blocked_items"][0]["issues"],
+        )
+
+    def test_execution_policy_review_merge_blocks_invalid_review_status(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, verdict_dir = write_execution_policy_case(
+                tmp_path,
+                feasibility_status="executable",
+            )
+            review_root = tmp_path / "policy-reviews"
+            write_execution_policy_review_file(
+                review_root,
+                sample_id="ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                ts_code="000001.SZ",
+                candidate_reviews=[
+                    {
+                        "candidate_constraint_type": "t1",
+                        "review_status": "not_triggered_in_fact_window",
+                        "review_reason": ["invalid_manual_status"],
+                    },
+                    {
+                        "candidate_constraint_type": "price_limit",
+                        "review_status": "evidence_incomplete",
+                        "review_reason": ["price_limit_state_still_unknown_on_planned_event"],
+                    },
+                ],
+            )
+
+            report = audit_first_batch_execution_policy_review_merge(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_root,
+            )
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertEqual(report["execution_policy_review_blocked_count"], 1)
+        self.assertIn(
+            "execution_policy_review_invalid_review_status:not_triggered_in_fact_window",
+            report["execution_policy_review_blocked_items"][0]["issues"],
+        )
+
+    def test_execution_policy_review_merge_blocks_on_ts_code_mismatch(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, verdict_dir = write_execution_policy_case(
+                tmp_path,
+                feasibility_status="executable",
+            )
+            review_root = tmp_path / "policy-reviews"
+            write_execution_policy_review_file(
+                review_root,
+                sample_id="ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                ts_code="300750.SZ",
+                candidate_reviews=[
+                    {
+                        "candidate_constraint_type": "t1",
+                        "review_status": "review_required",
+                        "review_reason": ["planned_event_requires_t1_policy_review"],
+                    },
+                    {
+                        "candidate_constraint_type": "price_limit",
+                        "review_status": "evidence_incomplete",
+                        "review_reason": ["price_limit_state_still_unknown_on_planned_event"],
+                    },
+                ],
+            )
+
+            report = audit_first_batch_execution_policy_review_merge(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_root,
+            )
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertEqual(report["execution_policy_review_blocked_count"], 1)
+        self.assertIn(
+            "execution_policy_review_ts_code_mismatch",
+            report["execution_policy_review_blocked_items"][0]["issues"],
+        )
+
+    def test_execution_policy_review_merge_preserves_blocked_outcome_items_without_review_records(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, verdict_dir = write_execution_policy_case(
+                tmp_path,
+                execution_event_type="lock_candidate",
+                method_action="wait_no_action",
+                pm_action="lock_candidate",
+                feasibility_status="carry_forward_required",
+                verdict_reason=["manual_followup_required"],
+                blocked_reason=["awaiting_execution_evidence"],
+                carry_forward_required=True,
+            )
+            review_root = tmp_path / "policy-reviews"
+
+            report = audit_first_batch_execution_policy_review_merge(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_root,
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["execution_policy_review_count"], 0)
+        self.assertEqual(report["execution_policy_review_blocked_count"], 1)
+        self.assertEqual(
+            report["execution_policy_review_blocked_items"][0]["issues"],
+            ["execution_policy_candidates_require_additional_execution_evidence"],
+        )
+        self.assertEqual(report["next_action"], "action:collect_additional_execution_evidence")
+
+    def test_cli_runs_execution_policy_review_merge(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, verdict_dir = write_execution_policy_case(
+                tmp_path,
+                feasibility_status="executable",
+            )
+            review_root = tmp_path / "policy-reviews"
+            write_execution_policy_review_file(
+                review_root,
+                sample_id="ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                ts_code="000001.SZ",
+                candidate_reviews=[
+                    {
+                        "candidate_constraint_type": "t1",
+                        "review_status": "review_required",
+                        "review_reason": ["planned_event_requires_t1_policy_review"],
+                    },
+                    {
+                        "candidate_constraint_type": "price_limit",
+                        "review_status": "evidence_incomplete",
+                        "review_reason": ["price_limit_state_still_unknown_on_planned_event"],
+                    },
+                ],
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "ashare_intake_validator",
+                    "--root",
+                    str(fixture_root),
+                    "--audit-first-batch-execution-policy-review-merge",
+                    str(review_root),
+                    "--method-pm-plan-dir",
+                    str(plan_dir),
+                    "--institution-fact-root",
+                    str(fact_root),
+                ],
+                cwd=ROOT,
+                env={"PYTHONPATH": str(ROOT / "src")},
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        report = json.loads(completed.stdout)
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["execution_policy_review_count"], 3)
+        self.assertEqual(report["review_status_counts"]["carry_forward_required"], 1)
+        self.assertEqual(report["next_action"], "action:review_execution_policy_archive")
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+
+    def test_execution_policy_archive_creates_read_only_archive_records(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, verdict_dir = write_execution_policy_case(
+                tmp_path,
+                feasibility_status="executable",
+            )
+            review_root = tmp_path / "policy-reviews"
+            write_execution_policy_review_file(
+                review_root,
+                sample_id="ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                ts_code="000001.SZ",
+                candidate_reviews=[
+                    {
+                        "candidate_constraint_type": "t1",
+                        "review_status": "review_required",
+                        "review_reason": ["planned_event_requires_t1_policy_review"],
+                        "blocked_reason": [],
+                        "evidence_ref": ["ASHARE-CONSTRAINT-000001.SZ-2026-01-06-v0.1"],
+                    },
+                    {
+                        "candidate_constraint_type": "price_limit",
+                        "review_status": "evidence_incomplete",
+                        "review_reason": ["price_limit_state_still_unknown_on_planned_event"],
+                        "blocked_reason": [],
+                        "evidence_ref": ["ASHARE-CONSTRAINT-000001.SZ-2026-01-06-v0.1"],
+                    },
+                ],
+            )
+
+            report = audit_first_batch_execution_policy_archive(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_root,
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["execution_policy_archive_count"], 3)
+        self.assertEqual(report["execution_policy_archive_blocked_count"], 0)
+        self.assertEqual(
+            report["archive_status_counts"],
+            {
+                "review_required": 1,
+                "evidence_incomplete": 1,
+                "carry_forward_required": 1,
+            },
+        )
+        self.assertEqual(report["next_action"], "action:prepare_execution_policy_research")
+        archives = {
+            item["candidate_constraint_type"]: item
+            for item in report["execution_policy_archives"]
+        }
+        self.assertEqual(archives["t1"]["record_type"], "AShareExecutionPolicyArchive")
+        self.assertEqual(archives["t1"]["archive_source"], "execution_policy_review_merge")
+        self.assertEqual(
+            archives["t1"]["archive_reason"],
+            ["execution_policy_candidate_archived_for_policy_research"],
+        )
+        self.assertEqual(archives["t1"]["next_action"], "action:prepare_execution_policy_research")
+        self.assertEqual(
+            archives["price_limit"]["archive_reason"],
+            ["execution_policy_candidate_archived_with_incomplete_evidence"],
+        )
+        self.assertEqual(
+            archives["price_limit"]["next_action"],
+            "action:collect_additional_execution_evidence",
+        )
+        self.assertEqual(
+            archives["suspension_resume"]["archive_reason"],
+            ["execution_policy_candidate_archived_for_carry_forward"],
+        )
+        self.assertEqual(
+            archives["suspension_resume"]["next_action"],
+            "action:collect_additional_execution_evidence",
+        )
+        for archive in report["execution_policy_archives"]:
+            for forbidden_field in [
+                "buy_signal",
+                "sell_signal",
+                "trade_accept",
+                "target_position",
+                "position_size",
+                "ashare_t1_action",
+                "limit_up_strategy",
+                "limit_down_strategy",
+            ]:
+                self.assertNotIn(forbidden_field, archive)
+
+    def test_execution_policy_archive_preserves_upstream_blocked_items(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, verdict_dir = write_execution_policy_case(
+                tmp_path,
+                execution_event_type="lock_candidate",
+                method_action="wait_no_action",
+                pm_action="lock_candidate",
+                feasibility_status="carry_forward_required",
+                verdict_reason=["manual_followup_required"],
+                blocked_reason=["awaiting_execution_evidence"],
+                carry_forward_required=True,
+            )
+            review_root = tmp_path / "policy-reviews"
+
+            report = audit_first_batch_execution_policy_archive(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_root,
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["execution_policy_archive_count"], 0)
+        self.assertEqual(report["execution_policy_archive_blocked_count"], 1)
+        self.assertEqual(
+            report["execution_policy_archive_blocked_items"][0]["issues"],
+            ["execution_policy_candidates_require_additional_execution_evidence"],
+        )
+        self.assertEqual(report["next_action"], "action:collect_additional_execution_evidence")
+
+    def test_execution_policy_archive_blocks_when_review_merge_blocks(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, verdict_dir = write_execution_policy_case(
+                tmp_path,
+                feasibility_status="executable",
+            )
+            review_root = tmp_path / "policy-reviews"
+            write_execution_policy_review_file(
+                review_root,
+                sample_id="ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                ts_code="000001.SZ",
+                candidate_reviews=[
+                    {
+                        "candidate_constraint_type": "price_limit",
+                        "review_status": "evidence_incomplete",
+                        "review_reason": ["price_limit_state_still_unknown_on_planned_event"],
+                    }
+                ],
+            )
+
+            report = audit_first_batch_execution_policy_archive(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_root,
+            )
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertEqual(report["execution_policy_archive_count"], 0)
+        self.assertEqual(report["execution_policy_archives"], [])
+        self.assertEqual(report["next_action"], "action:review_execution_policy_candidates")
+        self.assertEqual(
+            report["issues"],
+            ["execution_policy_archive_requires_valid_execution_policy_reviews"],
+        )
+
+    def test_cli_runs_execution_policy_archive(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, verdict_dir = write_execution_policy_case(
+                tmp_path,
+                feasibility_status="executable",
+            )
+            review_root = tmp_path / "policy-reviews"
+            write_execution_policy_review_file(
+                review_root,
+                sample_id="ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                ts_code="000001.SZ",
+                candidate_reviews=[
+                    {
+                        "candidate_constraint_type": "t1",
+                        "review_status": "review_required",
+                        "review_reason": ["planned_event_requires_t1_policy_review"],
+                    },
+                    {
+                        "candidate_constraint_type": "price_limit",
+                        "review_status": "evidence_incomplete",
+                        "review_reason": ["price_limit_state_still_unknown_on_planned_event"],
+                    },
+                ],
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "ashare_intake_validator",
+                    "--root",
+                    str(fixture_root),
+                    "--audit-first-batch-execution-policy-archive",
+                    str(review_root),
+                    "--method-pm-plan-dir",
+                    str(plan_dir),
+                    "--institution-fact-root",
+                    str(fact_root),
+                ],
+                cwd=ROOT,
+                env={"PYTHONPATH": str(ROOT / "src")},
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        report = json.loads(completed.stdout)
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["execution_policy_archive_count"], 3)
+        self.assertEqual(report["archive_status_counts"]["carry_forward_required"], 1)
+        self.assertEqual(report["next_action"], "action:prepare_execution_policy_research")
         self.assertFalse(report["signal_generation_allowed"])
         self.assertFalse(report["backtest_execution_allowed"])
 

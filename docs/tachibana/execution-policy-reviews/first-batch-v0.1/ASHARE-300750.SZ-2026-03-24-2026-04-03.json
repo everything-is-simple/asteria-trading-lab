@@ -1,0 +1,32 @@
+{
+  "ashare_sample_id": "ASHARE-300750.SZ-2026-03-24-2026-04-03",
+  "ts_code": "300750.SZ",
+  "candidate_reviews": [
+    {
+      "candidate_constraint_type": "t1",
+      "review_status": "review_required",
+      "review_reason": [
+        "planned_event_requires_t1_policy_review",
+        "add_on_replay_should_keep_t1_as_explicit_execution_constraint_candidate"
+      ],
+      "blocked_reason": [],
+      "evidence_ref": [
+        "ASHARE-CONSTRAINT-300750.SZ-2026-04-03-v0.1",
+        "docs/tachibana/method-pm-plans/first-batch-v0.1/ASHARE-300750.SZ-2026-03-24-2026-04-03.json"
+      ]
+    },
+    {
+      "candidate_constraint_type": "price_limit",
+      "review_status": "evidence_incomplete",
+      "review_reason": [
+        "price_limit_state_still_unknown_on_planned_event",
+        "pressure_adjust_sample_requires_clear_limit_state_before_policy_definition"
+      ],
+      "blocked_reason": [],
+      "evidence_ref": [
+        "ASHARE-CONSTRAINT-300750.SZ-2026-04-03-v0.1",
+        "docs/tachibana/method-pm-plans/first-batch-v0.1/ASHARE-300750.SZ-2026-03-24-2026-04-03.json"
+      ]
+    }
+  ]
+}

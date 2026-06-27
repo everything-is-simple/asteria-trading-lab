@@ -17,6 +17,7 @@
 - `tachibana_front_filter.py`：只读运行 MALF-立花前置认知过滤器，输出 `rhythm_meaning / tachibana_applicability`，不输出交易或仓位字段。
 - `data_sources/tdx_local/first_batch.py`：基于 Tongdaxin + DuckDB 主账本生成首批真实 A 股样本接入包，并复用现有只读 gate 做样本覆盖审计。
 - `data_sources/tdx_local/institution_facts.py`：从本地 DuckDB `tradability_fact` 生成最小 A 股制度事实包，只用于把执行证据链路通到 `evidence_ready`。
+- `data_sources/tdx_local/` 下的 `execution policy archive` 相关入口：把 `execution_policy_review_merge` 固化为只读归档记录，继续停在审计边界内。
 - `tests/fixtures/ashare-intake-ready/`：非真实 A 股最小接入包 fixture，只用于验证 ready 接入包仍必须停在 `structure_candidate` 并进入前置过滤器。
 - `tests/fixtures/front-filter/`：非真实 MALF snapshot fixture，只用于验证前置过滤器输出契约。
 - 输出目标：`data/pioneer-1975-1976/backtest-v0.1/`。
@@ -49,6 +50,9 @@ $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-tradi
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-feasibility-verdicts path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-feasibility-verdict-merge path\to\execution-feasibility-verdict-dir --method-pm-plan-dir path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-feasibility-outcomes path\to\execution-feasibility-verdict-dir --method-pm-plan-dir path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
+$env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-policy-candidates path\to\execution-feasibility-verdict-dir --method-pm-plan-dir path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
+$env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-policy-review-merge path\to\execution-policy-review-dir --method-pm-plan-dir path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
+$env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-policy-archive path\to\execution-policy-review-dir --method-pm-plan-dir path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root tests\fixtures\ashare-intake-ready
 $env:PYTHONPATH='src'; python -m tachibana_front_filter --snapshot tests\fixtures\front-filter\alive-wave-ready.json
 $env:PYTHONPATH='src'; python -m tachibana_front_filter --snapshot tests\fixtures\front-filter\alive-wave-ready.json --record-draft --ashare-sample-id ASHARE-FIXTURE-001 --symbol-name "Ping An Bank"
