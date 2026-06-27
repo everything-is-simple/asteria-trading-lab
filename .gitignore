@@ -21,6 +21,12 @@ tmp/
 .cache/
 data/pioneer-1975-1976/backtest-v0.1/
 docs/backtest-spec/test-single-trades/
+*.day
+*.duckdb
+*.7z
+new_tdx64/
+tdx_offline_Data/
+malf-data/
 
 # Large raw source placeholders
 research/sources/local-only/
