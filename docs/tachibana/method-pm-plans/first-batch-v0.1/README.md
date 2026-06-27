@@ -211,8 +211,9 @@ python -m ashare_intake_validator --root Z:\asteria-trading-labs-data `
 2. **制度事实包最小通电** —— 已从 `Z:\malf-data\market_meta.duckdb` 的 `tradability_fact` 按 2026-03-24~04-03 窗口 + 3 个 ts_code 生成 `ashare/institution-facts-v0.1/*.csv`。
 3. **执行证据链路** —— `--audit-first-batch-execution-constraint-snapshots`、`--audit-first-batch-execution-feasibility-gate`、`--audit-first-batch-execution-feasibility-verdicts` 均已通过；3 条样本从 `pending_constraint_evidence` 推进到 `evidence_ready`。
 4. **人工 verdict 已落地** —— [../../execution-feasibility-verdicts/first-batch-v0.1/README.md](../../execution-feasibility-verdicts/first-batch-v0.1/README.md) 已写入 3 份人工复核 JSON：`000001.SZ -> executable`、`300750.SZ -> constrained`、`600000.SH -> carry_forward_required`。
-5. **当前边界** —— 即使 `000001.SZ` 被人工复核为 `executable`，它也只表示“没有已知制度事实阻断该 replay”；仍不得把它解释成 `trade_accept`、仓位许可、T+1 策略或涨跌停策略。
-6. **覆盖反例 / unknown**：考虑给 002714.SZ (NM-NO-STRUCTURE) 和 601127.SH (unknown) 也填一份"为什么不进入 Method/PM"的占位草案。
+5. **outcome 层已跑通** —— `--audit-first-batch-execution-feasibility-outcomes` 已把 3 份人工 verdict 固化为 `AShareExecutionFeasibilityOutcome`：`000001.SZ -> executable`、`300750.SZ -> constrained`、`600000.SH -> carry_forward_required`。
+6. **当前边界** —— 即使 `000001.SZ` 被固化为 `executable outcome`，它也只表示“没有已知制度事实阻断该 replay”；仍不得把它解释成 `trade_accept`、仓位许可、T+1 策略或涨跌停策略。
+7. **覆盖反例 / unknown**：考虑给 002714.SZ (NM-NO-STRUCTURE) 和 601127.SH (unknown) 也填一份"为什么不进入 Method/PM"的占位草案。
 
 ---
 
@@ -226,4 +227,5 @@ python -m ashare_intake_validator --root Z:\asteria-trading-labs-data `
 - 3 份草案生成 3 条 `AShareExecutionFeasibilityAudit` (status=evidence_ready)
 - 3 份草案生成 3 条 `AShareExecutionFeasibilityVerdict` draft (status=not_evaluated)
 - 3 份人工 verdict 通过 `audit_first_batch_execution_feasibility_verdict_merge`
+- 3 份人工 verdict 生成 3 条 `AShareExecutionFeasibilityOutcome`
 - 三道全局硬闸（signal/backtest/institution_rule_definition）全程 False

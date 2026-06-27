@@ -656,6 +656,33 @@ $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-tradi
 
 该层的意义仍然是“人工记录执行可行性事实状态”，而不是“授予交易权”。即使人工把某条样本复核为 `executable`，也不等于 `trade_accept`，更不等于目标仓位、T+1 处理或涨跌停策略已经定义完成。
 
+## execution feasibility outcomes 输出字段
+
+人工 verdict 合流通过后，可以把其固化为只读 outcome 记录：
+
+```powershell
+$env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-feasibility-outcomes <execution-feasibility-verdict-dir> --method-pm-plan-dir <method-pm-plan-dir> --institution-fact-root Z:\asteria-trading-labs-data
+```
+
+该层是 verdict 的后继层，不新增 second review：
+
+| 字段 | 含义 |
+|---|---|
+| `execution_feasibility_outcome_count` | 本轮成功固化的 outcome 数量。 |
+| `execution_feasibility_outcomes` | 每条记录为 `AShareExecutionFeasibilityOutcome`，逐样本固定执行事实结果。 |
+| `outcome_status_counts` | 各类 `feasibility_status` 的批量计数。 |
+| `outcome_source` | 固定为 `execution_feasibility_verdict_merge`。 |
+| `outcome_note` | 只描述审计含义，不描述策略。 |
+| `next_action` | `executable / constrained` 进入 `action:review_execution_policy_candidates`；`blocked / carry_forward_required` 进入 `action:collect_additional_execution_evidence`；`not_evaluated` 回到 `action:review_execution_feasibility_verdicts`。 |
+
+Outcome 仍然不是交易许可层：
+
+- `executable` 不等于 `trade_accept`
+- `constrained` 不等于仓位折扣已经定义
+- `carry_forward_required` 不等于失败，只表示事实链应继续续传
+
+该层仍禁止 `buy_signal / sell_signal / trade_accept / target_position / position_size / ashare_t1_action / limit_up_strategy`。
+
 ## Backtest Input readiness 输出字段
 
 `--audit-first-batch-backtest-input-readiness` 的输出应作为 Backtest Input 快照准备前的只读闸门：

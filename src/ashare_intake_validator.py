@@ -1103,6 +1103,66 @@ def audit_first_batch_execution_feasibility_verdict_merge(
     }
 
 
+def audit_first_batch_execution_feasibility_outcomes(
+    data_root: str | Path,
+    plan_dir: str | Path,
+    institution_fact_root: str | Path,
+    verdict_dir: str | Path,
+) -> dict[str, Any]:
+    merge_report = audit_first_batch_execution_feasibility_verdict_merge(
+        data_root,
+        plan_dir,
+        institution_fact_root,
+        verdict_dir,
+    )
+    if merge_report["result"] != "pass":
+        return {
+            "result": "blocked",
+            "execution_feasibility_outcome_count": 0,
+            "execution_feasibility_outcomes": [],
+            "outcome_status_counts": {},
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": merge_report["next_action"],
+            "issues": merge_report["issues"],
+            "execution_feasibility_verdict_merge": merge_report,
+        }
+
+    outcomes: list[dict[str, Any]] = []
+    blocked_items: list[dict[str, Any]] = []
+    for verdict in merge_report.get("execution_feasibility_verdicts", []):
+        outcome = _execution_feasibility_outcome_item(verdict)
+        if outcome is None:
+            blocked_items.append(
+                {
+                    "ashare_sample_id": verdict.get("ashare_sample_id"),
+                    "ts_code": verdict.get("ts_code"),
+                    "issues": [f"execution_feasibility_outcome_invalid_status:{verdict.get('feasibility_status')}"],
+                    "next_action": "action:review_execution_feasibility_verdicts",
+                }
+            )
+            continue
+        outcomes.append(outcome)
+
+    result = "pass" if outcomes and not blocked_items else "blocked"
+    return {
+        "result": result,
+        "execution_feasibility_outcome_count": len(outcomes) if result == "pass" else 0,
+        "execution_feasibility_outcomes": outcomes if result == "pass" else [],
+        "execution_feasibility_outcome_blocked_items": blocked_items,
+        "outcome_status_counts": _status_counts(outcomes) if result == "pass" else {},
+        "institution_rule_definition_allowed": False,
+        "signal_generation_allowed": False,
+        "backtest_execution_allowed": False,
+        "next_action": _execution_feasibility_outcome_report_next_action(outcomes)
+        if result == "pass"
+        else "action:review_execution_feasibility_verdicts",
+        "issues": [] if result == "pass" else ["execution_feasibility_outcome_requires_valid_merged_verdicts"],
+        "execution_feasibility_verdict_merge": merge_report,
+    }
+
+
 def _method_pm_plan_draft_index(plan_dir: Path) -> dict[str, dict[str, Any]]:
     if not plan_dir.exists() or not plan_dir.is_dir():
         return {}
@@ -1503,6 +1563,57 @@ def _execution_feasibility_verdict_ready_item(
     }
 
 
+def _execution_feasibility_outcome_item(verdict: dict[str, Any]) -> dict[str, Any] | None:
+    feasibility_status = str(verdict.get("feasibility_status", "not_evaluated"))
+    next_action_by_status = {
+        "executable": "action:review_execution_policy_candidates",
+        "constrained": "action:review_execution_policy_candidates",
+        "blocked": "action:collect_additional_execution_evidence",
+        "carry_forward_required": "action:collect_additional_execution_evidence",
+        "not_evaluated": "action:review_execution_feasibility_verdicts",
+    }
+    outcome_note_by_status = {
+        "executable": "execution_fact_outcome_ready_for_policy_candidate_review",
+        "constrained": "execution_fact_outcome_requires_policy_constraint_review",
+        "blocked": "execution_fact_outcome_blocked_by_current_fact_set",
+        "carry_forward_required": "execution_fact_outcome_requires_additional_evidence",
+        "not_evaluated": "execution_fact_outcome_still_waiting_manual_verdict",
+    }
+    next_action = next_action_by_status.get(feasibility_status)
+    if next_action is None:
+        return None
+    boundary_warning = _unique_preserve_order(
+        [
+            *_list_value(verdict.get("boundary_warning")),
+            "execution_outcome_is_not_trade_decision",
+            "execution_outcome_must_not_emit_signal",
+            "execution_outcome_must_not_set_position",
+        ]
+    )
+    return {
+        "record_type": "AShareExecutionFeasibilityOutcome",
+        "ashare_institution_gate_id": verdict.get("ashare_institution_gate_id"),
+        "ashare_sample_id": verdict.get("ashare_sample_id"),
+        "ts_code": verdict.get("ts_code"),
+        "planned_event": verdict.get("planned_event"),
+        "method_action": verdict.get("method_action"),
+        "pm_action": verdict.get("pm_action"),
+        "constraint_snapshot_ref": verdict.get("constraint_snapshot_ref"),
+        "evidence_status": verdict.get("evidence_status"),
+        "feasibility_status": feasibility_status,
+        "blocked_reason": verdict.get("blocked_reason", []),
+        "carry_forward_required": bool(verdict.get("carry_forward_required", False)),
+        "outcome_note": outcome_note_by_status[feasibility_status],
+        "outcome_source": "execution_feasibility_verdict_merge",
+        "evidence_ref": _list_value(verdict.get("evidence_ref")),
+        "boundary_warning": boundary_warning,
+        "institution_rule_definition_allowed": False,
+        "signal_generation_allowed": False,
+        "backtest_execution_allowed": False,
+        "next_action": next_action,
+    }
+
+
 def _execution_feasibility_verdict_blocked_item(
     verdict: dict[str, Any],
     review: dict[str, Any],
@@ -1515,6 +1626,25 @@ def _execution_feasibility_verdict_blocked_item(
         "issues": contract.get("issues", []),
         "next_action": contract.get("next_action", "action:review_execution_feasibility_verdicts"),
     }
+
+
+def _execution_feasibility_outcome_report_next_action(outcomes: list[dict[str, Any]]) -> str:
+    statuses = {str(item.get("feasibility_status")) for item in outcomes}
+    if "not_evaluated" in statuses:
+        return "action:review_execution_feasibility_verdicts"
+    if statuses.intersection({"executable", "constrained"}):
+        return "action:review_execution_policy_candidates"
+    if statuses.intersection({"blocked", "carry_forward_required"}):
+        return "action:collect_additional_execution_evidence"
+    return "action:review_execution_feasibility_verdicts"
+
+
+def _status_counts(items: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        status = str(item.get("feasibility_status"))
+        counts[status] = counts.get(status, 0) + 1
+    return counts
 
 
 def _constraint_types_from_fact(fact: dict[str, str]) -> list[str]:
@@ -2357,6 +2487,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Merge a directory of manual execution feasibility verdict JSON files into the audit-only verdict layer.",
     )
     parser.add_argument(
+        "--audit-first-batch-execution-feasibility-outcomes",
+        help="Build read-only execution feasibility outcome records from merged manual verdicts.",
+    )
+    parser.add_argument(
         "--method-pm-plan-dir",
         help="Method/PM plan directory required by execution-feasibility verdict merge.",
     )
@@ -2365,6 +2499,25 @@ def main(argv: list[str] | None = None) -> int:
         help="Institution fact package root for execution constraint snapshot drafts; defaults to --root.",
     )
     args = parser.parse_args(argv)
+
+    if args.audit_first_batch_execution_feasibility_outcomes:
+        if not args.method_pm_plan_dir:
+            report = {
+                "result": "blocked",
+                "next_action": "action:review_execution_feasibility_verdicts",
+                "issues": ["missing_method_pm_plan_dir_for_execution_feasibility_outcomes"],
+            }
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 1
+        fact_root = args.institution_fact_root or args.root
+        report = audit_first_batch_execution_feasibility_outcomes(
+            args.root,
+            args.method_pm_plan_dir,
+            fact_root,
+            args.audit_first_batch_execution_feasibility_outcomes,
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report["result"] == "pass" else 1
 
     if args.audit_first_batch_execution_feasibility_verdict_merge:
         if not args.method_pm_plan_dir:

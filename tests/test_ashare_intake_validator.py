@@ -12,6 +12,7 @@ from ashare_intake_validator import (
     _audit_stage_reason_consistency,
     audit_ashare_institution_fact_package,
     audit_first_batch_execution_feasibility_gate,
+    audit_first_batch_execution_feasibility_outcomes,
     audit_first_batch_execution_feasibility_verdict_merge,
     audit_first_batch_execution_feasibility_verdicts,
     audit_first_batch_execution_constraint_snapshots,
@@ -1955,6 +1956,342 @@ class AShareIntakeValidatorTest(unittest.TestCase):
         report = json.loads(completed.stdout)
         self.assertEqual(report["result"], "pass")
         self.assertEqual(report["execution_feasibility_verdicts"][0]["feasibility_status"], "executable")
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+
+    def test_execution_feasibility_outcomes_emit_read_only_outcome_records(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir = tmp_path / "plans"
+            plan_dir.mkdir()
+            (plan_dir / "000001-method-pm-plan.json").write_text(
+                json.dumps(
+                    {
+                        "ashare_sample_id": "ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                        "ts_code": "000001.SZ",
+                        "method_action": "wait_no_action",
+                        "method_status": "hypothesis",
+                        "method_reason": ["structure_suitable_but_no_action_yet"],
+                        "pm_required": False,
+                        "execution_intent": "replay_hypothesis_plan",
+                        "execution_event_type": "hold",
+                        "method_evidence_ref": ["manual:method-review-001"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            fact_root = tmp_path / "facts"
+            write_csv(
+                fact_root / "ashare" / "institution-facts-v0.1" / "000001.SZ.csv",
+                INSTITUTION_FACT_HEADER,
+                [[
+                    "000001.SZ",
+                    "2026-01-06",
+                    "true",
+                    "false",
+                    "11.77",
+                    "9.63",
+                    "none",
+                    "none",
+                    "100",
+                    "unit-test:exchange-calendar-and-price-limit",
+                ]],
+            )
+            review_dir = tmp_path / "execution-verdicts"
+            review_dir.mkdir()
+            (review_dir / "000001-execution-feasibility-verdict.json").write_text(
+                json.dumps(
+                    {
+                        "ashare_sample_id": "ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                        "ts_code": "000001.SZ",
+                        "feasibility_status": "executable",
+                        "verdict_reason": ["manual_execution_path_is_clear"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = audit_first_batch_execution_feasibility_outcomes(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_dir,
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["execution_feasibility_outcome_count"], 1)
+        self.assertEqual(report["outcome_status_counts"], {"executable": 1})
+        self.assertEqual(report["next_action"], "action:review_execution_policy_candidates")
+        self.assertFalse(report["institution_rule_definition_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+        outcome = report["execution_feasibility_outcomes"][0]
+        self.assertEqual(outcome["record_type"], "AShareExecutionFeasibilityOutcome")
+        self.assertEqual(outcome["feasibility_status"], "executable")
+        self.assertEqual(outcome["outcome_source"], "execution_feasibility_verdict_merge")
+        self.assertEqual(outcome["next_action"], "action:review_execution_policy_candidates")
+        self.assertEqual(outcome["outcome_note"], "execution_fact_outcome_ready_for_policy_candidate_review")
+        for forbidden_field in [
+            "buy_signal",
+            "sell_signal",
+            "trade_accept",
+            "target_position",
+            "position_size",
+            "ashare_t1_action",
+            "limit_up_strategy",
+        ]:
+            self.assertNotIn(forbidden_field, outcome)
+
+    def test_execution_feasibility_outcomes_map_carry_forward_action(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir = tmp_path / "plans"
+            plan_dir.mkdir()
+            (plan_dir / "000001.SZ-method-pm-plan.json").write_text(
+                json.dumps(
+                    {
+                        "ashare_sample_id": "ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                        "ts_code": "000001.SZ",
+                        "method_action": "wait_no_action",
+                        "method_status": "hypothesis",
+                        "method_reason": ["structure_suitable_but_no_action_yet"],
+                        "pm_required": False,
+                        "execution_intent": "replay_hypothesis_plan",
+                        "execution_event_type": "hold",
+                        "method_evidence_ref": ["manual:method-review-001"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            fact_root = tmp_path / "facts"
+            write_csv(
+                fact_root / "ashare" / "institution-facts-v0.1" / "000001.SZ.csv",
+                INSTITUTION_FACT_HEADER,
+                [[
+                    "000001.SZ",
+                    "2026-01-06",
+                    "true",
+                    "false",
+                    "11.77",
+                    "9.63",
+                    "none",
+                    "none",
+                    "100",
+                    "unit-test:exchange-calendar-and-price-limit",
+                ]],
+            )
+            review_dir = tmp_path / "execution-verdicts"
+            review_dir.mkdir()
+            (review_dir / "000001-execution-feasibility-verdict.json").write_text(
+                json.dumps(
+                    {
+                        "ashare_sample_id": "ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                        "ts_code": "000001.SZ",
+                        "feasibility_status": "carry_forward_required",
+                        "verdict_reason": ["manual_followup_required"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = audit_first_batch_execution_feasibility_outcomes(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_dir,
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(
+            report["execution_feasibility_outcomes"][0]["next_action"],
+            "action:collect_additional_execution_evidence",
+        )
+        self.assertTrue(report["execution_feasibility_outcomes"][0]["carry_forward_required"])
+
+    def test_execution_feasibility_outcomes_map_not_evaluated_back_to_verdict_review(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir = tmp_path / "plans"
+            plan_dir.mkdir()
+            (plan_dir / "000001.SZ-method-pm-plan.json").write_text(
+                json.dumps(
+                    {
+                        "ashare_sample_id": "ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                        "ts_code": "000001.SZ",
+                        "method_action": "wait_no_action",
+                        "method_status": "hypothesis",
+                        "method_reason": ["structure_suitable_but_no_action_yet"],
+                        "pm_required": False,
+                        "execution_intent": "replay_hypothesis_plan",
+                        "execution_event_type": "hold",
+                        "method_evidence_ref": ["manual:method-review-001"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            fact_root = tmp_path / "facts"
+            write_csv(
+                fact_root / "ashare" / "institution-facts-v0.1" / "000001.SZ.csv",
+                INSTITUTION_FACT_HEADER,
+                [[
+                    "000001.SZ",
+                    "2026-01-06",
+                    "true",
+                    "false",
+                    "11.77",
+                    "9.63",
+                    "none",
+                    "none",
+                    "100",
+                    "unit-test:exchange-calendar-and-price-limit",
+                ]],
+            )
+            review_dir = tmp_path / "execution-verdicts"
+            review_dir.mkdir()
+            (review_dir / "000001-execution-feasibility-verdict.json").write_text(
+                json.dumps(
+                    {
+                        "ashare_sample_id": "ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                        "ts_code": "000001.SZ",
+                        "feasibility_status": "not_evaluated",
+                        "verdict_reason": ["manual_review_left_open"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = audit_first_batch_execution_feasibility_outcomes(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_dir,
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(
+            report["execution_feasibility_outcomes"][0]["next_action"],
+            "action:review_execution_feasibility_verdicts",
+        )
+        self.assertFalse(report["execution_feasibility_outcomes"][0]["carry_forward_required"])
+
+    def test_execution_feasibility_outcomes_block_when_verdict_merge_blocks(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir = tmp_path / "plans"
+            plan_dir.mkdir()
+            (plan_dir / "000001-method-pm-plan.json").write_text(
+                json.dumps(
+                    {
+                        "ashare_sample_id": "ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                        "ts_code": "000001.SZ",
+                        "method_action": "wait_no_action",
+                        "method_status": "hypothesis",
+                        "method_reason": ["structure_suitable_but_no_action_yet"],
+                        "pm_required": False,
+                        "execution_intent": "replay_hypothesis_plan",
+                        "execution_event_type": "hold",
+                        "method_evidence_ref": ["manual:method-review-001"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = audit_first_batch_execution_feasibility_outcomes(
+                fixture_root,
+                plan_dir,
+                Path(tmp) / "missing-facts",
+                Path(tmp) / "missing-reviews",
+            )
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertEqual(report["execution_feasibility_outcome_count"], 0)
+        self.assertEqual(report["execution_feasibility_outcomes"], [])
+        self.assertEqual(report["next_action"], "action:repair_institution_fact_package")
+
+    def test_cli_runs_execution_feasibility_outcomes(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir = tmp_path / "plans"
+            plan_dir.mkdir()
+            (plan_dir / "000001-method-pm-plan.json").write_text(
+                json.dumps(
+                    {
+                        "ashare_sample_id": "ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                        "ts_code": "000001.SZ",
+                        "method_action": "wait_no_action",
+                        "method_status": "hypothesis",
+                        "method_reason": ["structure_suitable_but_no_action_yet"],
+                        "pm_required": False,
+                        "execution_intent": "replay_hypothesis_plan",
+                        "execution_event_type": "hold",
+                        "method_evidence_ref": ["manual:method-review-001"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            fact_root = tmp_path / "facts"
+            write_csv(
+                fact_root / "ashare" / "institution-facts-v0.1" / "000001.SZ.csv",
+                INSTITUTION_FACT_HEADER,
+                [[
+                    "000001.SZ",
+                    "2026-01-06",
+                    "true",
+                    "false",
+                    "11.77",
+                    "9.63",
+                    "none",
+                    "none",
+                    "100",
+                    "unit-test:exchange-calendar-and-price-limit",
+                ]],
+            )
+            review_dir = tmp_path / "execution-verdicts"
+            review_dir.mkdir()
+            (review_dir / "000001-execution-feasibility-verdict.json").write_text(
+                json.dumps(
+                    {
+                        "ashare_sample_id": "ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                        "ts_code": "000001.SZ",
+                        "feasibility_status": "constrained",
+                        "verdict_reason": ["manual_constraint_confirmed"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "ashare_intake_validator",
+                    "--root",
+                    str(fixture_root),
+                    "--audit-first-batch-execution-feasibility-outcomes",
+                    str(review_dir),
+                    "--method-pm-plan-dir",
+                    str(plan_dir),
+                    "--institution-fact-root",
+                    str(fact_root),
+                ],
+                cwd=ROOT,
+                env={"PYTHONPATH": str(ROOT / "src")},
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        report = json.loads(completed.stdout)
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["execution_feasibility_outcomes"][0]["feasibility_status"], "constrained")
+        self.assertEqual(report["execution_feasibility_outcomes"][0]["next_action"], "action:review_execution_policy_candidates")
         self.assertFalse(report["signal_generation_allowed"])
         self.assertFalse(report["backtest_execution_allowed"])
 
