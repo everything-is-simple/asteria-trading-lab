@@ -167,6 +167,62 @@ class TdxLocalInstitutionFactsTest(unittest.TestCase):
         self.assertEqual(report["result"], "pass")
         self.assertEqual(report["institution_fact_count"], 1)
 
+    def test_blocked_run_clears_requested_stale_files_when_a_ts_code_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            duckdb_root = root / "duckdb"
+            data_root = root / "data"
+            duckdb_root.mkdir()
+
+            stale_path = data_root / "ashare" / "institution-facts-v0.1" / "300750.SZ.csv"
+            stale_path.parent.mkdir(parents=True, exist_ok=True)
+            stale_path.write_text(
+                "ts_code,trade_date,is_trading_day,is_suspended,limit_up_price,limit_down_price,close_limit_status,touched_limit_status,board_lot_size,source_ref\n"
+                "300750.SZ,2026-03-24,true,false,,,unknown,unknown,100,stale\n",
+                encoding="utf-8",
+            )
+
+            import duckdb
+
+            con = duckdb.connect(str(duckdb_root / "market_meta.duckdb"))
+            con.execute(
+                """
+                create table tradability_fact (
+                    symbol varchar,
+                    asset_type varchar,
+                    trade_dt date,
+                    tradability_status varchar,
+                    blocked_reason varchar,
+                    source_role varchar,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.execute(
+                """
+                insert into tradability_fact values
+                ('sz000001', 'stock', '2026-03-24', 'tradable', null, 'tdx_direct', 'run-1', 'v1', 'r1', 'hash-1')
+                """
+            )
+            con.close()
+
+            report = build_minimal_institution_fact_package(
+                duckdb_root=duckdb_root,
+                data_root=data_root,
+                ts_codes=["000001.SZ", "300750.SZ"],
+                window_start="2026-03-24",
+                window_end="2026-03-24",
+            )
+
+            stale_exists_after = stale_path.exists()
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertEqual(report["missing_ts_codes"], ["300750.SZ"])
+        self.assertFalse(stale_exists_after)
+
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8-sig", newline="") as handle:

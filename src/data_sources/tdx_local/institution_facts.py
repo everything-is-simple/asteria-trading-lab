@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 from pathlib import Path
+import tempfile
 from typing import Any
 
 import duckdb
@@ -48,35 +49,52 @@ def build_minimal_institution_fact_package(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     rows_by_code = _read_tradability_rows(Path(duckdb_root), ts_codes, window_start, window_end)
+    missing_codes: list[str] = []
+    for ts_code in ts_codes:
+        if not rows_by_code.get(ts_code, []):
+            missing_codes.append(ts_code)
+
+    if missing_codes:
+        _remove_target_files(output_dir, ts_codes)
+        return _strip_forbidden_fields(
+            {
+                "result": "blocked",
+                "institution_fact_count": 0,
+                "institution_fact_files": [],
+                "missing_ts_codes": missing_codes,
+                "source_ref": "market_meta.duckdb:market_meta.tradability_fact",
+                "limit_price_policy": "minimal_power_on_unknown",
+                "institution_rule_definition_allowed": False,
+                "signal_generation_allowed": False,
+                "backtest_execution_allowed": False,
+                "next_action": "action:repair_institution_fact_package",
+            }
+        )
+
     fact_files: list[str] = []
     fact_count = 0
-    missing_codes: list[str] = []
+    with tempfile.TemporaryDirectory(dir=output_dir) as tmp:
+        staging_dir = Path(tmp)
+        for ts_code in ts_codes:
+            rows = rows_by_code[ts_code]
+            path = staging_dir / f"{ts_code}.csv"
+            _write_csv(path, rows)
+            fact_count += len(rows)
+            fact_files.append((output_dir / f"{ts_code}.csv").relative_to(root).as_posix())
+        _replace_target_files(staging_dir, output_dir, ts_codes)
 
-    for ts_code in ts_codes:
-        rows = rows_by_code.get(ts_code, [])
-        if not rows:
-            missing_codes.append(ts_code)
-            continue
-        path = output_dir / f"{ts_code}.csv"
-        _write_csv(path, rows)
-        fact_count += len(rows)
-        fact_files.append(path.relative_to(root).as_posix())
-
-    result = "pass" if fact_count > 0 and not missing_codes else "blocked"
     return _strip_forbidden_fields(
         {
-            "result": result,
-            "institution_fact_count": fact_count if result == "pass" else 0,
-            "institution_fact_files": fact_files if result == "pass" else [],
+            "result": "pass",
+            "institution_fact_count": fact_count,
+            "institution_fact_files": fact_files,
             "missing_ts_codes": missing_codes,
             "source_ref": "market_meta.duckdb:market_meta.tradability_fact",
             "limit_price_policy": "minimal_power_on_unknown",
             "institution_rule_definition_allowed": False,
             "signal_generation_allowed": False,
             "backtest_execution_allowed": False,
-            "next_action": "action:audit_institution_fact_package"
-            if result == "pass"
-            else "action:repair_institution_fact_package",
+            "next_action": "action:audit_institution_fact_package",
         }
     )
 
@@ -161,6 +179,19 @@ def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=INSTITUTION_FACT_HEADER)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _remove_target_files(output_dir: Path, ts_codes: list[str]) -> None:
+    for ts_code in ts_codes:
+        path = output_dir / f"{ts_code}.csv"
+        if path.exists():
+            path.unlink()
+
+
+def _replace_target_files(staging_dir: Path, output_dir: Path, ts_codes: list[str]) -> None:
+    _remove_target_files(output_dir, ts_codes)
+    for ts_code in ts_codes:
+        (staging_dir / f"{ts_code}.csv").replace(output_dir / f"{ts_code}.csv")
 
 
 def _strip_forbidden_fields(value: Any) -> Any:
