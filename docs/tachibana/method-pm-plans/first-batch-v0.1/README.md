@@ -209,20 +209,21 @@ python -m ashare_intake_validator --root Z:\asteria-trading-labs-data `
 
 1. **人工评审本批 3 份草案** —— 已阅并合入 main；后续仍可按 §4 清单复核修订。
 2. **制度事实包最小通电** —— 已从 `Z:\malf-data\market_meta.duckdb` 的 `tradability_fact` 按 2026-03-24~04-03 窗口 + 3 个 ts_code 生成 `ashare/institution-facts-v0.1/*.csv`。
-3. **执行证据链路** —— `--audit-first-batch-execution-constraint-snapshots`、`--audit-first-batch-execution-feasibility-gate`、`--audit-first-batch-execution-feasibility-verdicts` 均已通过；3 条样本从 `pending_constraint_evidence` 推进到 `evidence_ready`，默认 verdict 仍为 `not_evaluated`。
-4. **人工 verdict 合流入口** —— `--audit-first-batch-execution-feasibility-verdict-merge <review-dir> --method-pm-plan-dir docs\tachibana\method-pm-plans\first-batch-v0.1` 已提供，只接受 `not_evaluated / executable / constrained / blocked / carry_forward_required` 这些人工复核状态。
-5. **下一步** —— 人工复核 `AShareExecutionFeasibilityVerdict`；仍不得把 `evidence_ready` 或 `executable` 解释成 `trade_accept`、仓位许可、T+1 策略或涨跌停策略。
+3. **执行证据链路** —— `--audit-first-batch-execution-constraint-snapshots`、`--audit-first-batch-execution-feasibility-gate`、`--audit-first-batch-execution-feasibility-verdicts` 均已通过；3 条样本从 `pending_constraint_evidence` 推进到 `evidence_ready`。
+4. **人工 verdict 已落地** —— [../../execution-feasibility-verdicts/first-batch-v0.1/README.md](../../execution-feasibility-verdicts/first-batch-v0.1/README.md) 已写入 3 份人工复核 JSON：`000001.SZ -> executable`、`300750.SZ -> constrained`、`600000.SH -> carry_forward_required`。
+5. **当前边界** —— 即使 `000001.SZ` 被人工复核为 `executable`，它也只表示“没有已知制度事实阻断该 replay”；仍不得把它解释成 `trade_accept`、仓位许可、T+1 策略或涨跌停策略。
 6. **覆盖反例 / unknown**：考虑给 002714.SZ (NM-NO-STRUCTURE) 和 601127.SH (unknown) 也填一份"为什么不进入 Method/PM"的占位草案。
 
 ---
 
 **签字**: Claude (Opus 4.8) @ 2026-06-27
 **配套验证**:
-- 131 tests OK
+- 135 tests OK
 - 3 份草案通过 `audit_method_pm_plan_draft_contract`
 - 3 份草案通过 `audit_first_batch_method_pm_plan_merge`
 - 3 份草案生成 3 个 `BacktestInputSnapshot` (gate=pass, mode=hypothesis_replay)
 - 3 份草案生成 3 个 `AShareInstitutionConstraintGate` (status=pass)
 - 3 份草案生成 3 条 `AShareExecutionFeasibilityAudit` (status=evidence_ready)
-- 3 份草案生成 3 条 `AShareExecutionFeasibilityVerdict` (status=not_evaluated)
+- 3 份草案生成 3 条 `AShareExecutionFeasibilityVerdict` draft (status=not_evaluated)
+- 3 份人工 verdict 通过 `audit_first_batch_execution_feasibility_verdict_merge`
 - 三道全局硬闸（signal/backtest/institution_rule_definition）全程 False

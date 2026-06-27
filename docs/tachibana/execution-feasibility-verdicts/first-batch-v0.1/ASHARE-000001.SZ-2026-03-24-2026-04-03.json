@@ -1,0 +1,16 @@
+{
+  "ashare_sample_id": "ASHARE-000001.SZ-2026-03-24-2026-04-03",
+  "ts_code": "000001.SZ",
+  "feasibility_status": "executable",
+  "verdict_reason": [
+    "tradable_and_unsuspended_on_planned_event",
+    "board_lot_size_known_for_event_day",
+    "no_known_institution_fact_blocks_open_center_replay"
+  ],
+  "blocked_reason": [],
+  "evidence_ref": [
+    "ASHARE-CONSTRAINT-000001.SZ-2026-04-03-v0.1",
+    "docs/tachibana/method-pm-plans/first-batch-v0.1/ASHARE-000001.SZ-2026-03-24-2026-04-03.json",
+    "docs/tachibana/index/Tachibana-A股首批真实样本结构资格判定记录-v0.1.md"
+  ]
+}
