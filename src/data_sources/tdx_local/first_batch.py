@@ -179,9 +179,13 @@ def build_first_batch_sample_package(
         if not daily_rows:
             issues.append(f"missing_daily_window:{ts_code}")
             continue
-        industry_row = _select_industry_row(industry_index.get(ts_code, []), str(entry.get("sample_window_end", "")))
+        industry_row = _select_industry_row(
+            industry_index.get(ts_code, []),
+            str(entry.get("sample_window_start", "")),
+            str(entry.get("sample_window_end", "")),
+        )
         if industry_row is None:
-            issues.append(f"missing_industry_membership:{ts_code}")
+            issues.append(f"industry_membership_window_not_overlapping:{ts_code}")
             continue
 
         candidate_rows.append(_candidate_row(symbol_row, entry))
@@ -338,16 +342,27 @@ def _window_rows(daily_rows: list[dict[str, Any]], entry: dict[str, Any]) -> lis
     return [row for row in daily_rows if start <= str(row.get("trade_date", "")) <= end]
 
 
-def _select_industry_row(rows: list[dict[str, str | None]], window_end: str) -> dict[str, str | None] | None:
-    covering = []
+def _select_industry_row(
+    rows: list[dict[str, str | None]],
+    window_start: str,
+    window_end: str,
+) -> dict[str, str | None] | None:
+    window_start_dt = _parse_iso_date(window_start)
+    window_end_dt = _parse_iso_date(window_end)
+    if window_start_dt is None or window_end_dt is None:
+        return None
+    overlapping: list[tuple[datetime, dict[str, str | None]]] = []
     for row in rows:
-        valid_from = row.get("valid_from") or ""
-        valid_to = row.get("valid_to") or "9999-12-31"
-        if valid_from <= window_end <= valid_to:
-            covering.append(row)
-    if covering:
-        return covering[-1]
-    return rows[-1] if rows else None
+        valid_from_dt = _parse_iso_date(str(row.get("valid_from") or ""))
+        valid_to_dt = _parse_iso_date(str(row.get("valid_to") or "")) or datetime.max
+        if valid_from_dt is None:
+            valid_from_dt = datetime.min
+        if valid_from_dt <= window_end_dt and window_start_dt <= valid_to_dt:
+            overlapping.append((valid_from_dt, row))
+    if not overlapping:
+        return None
+    overlapping.sort(key=lambda item: item[0])
+    return overlapping[-1][1]
 
 
 def _candidate_row(symbol_row: dict[str, Any], entry: dict[str, Any]) -> dict[str, str]:
@@ -453,6 +468,15 @@ def _is_new_stock_window(list_date: str, sample_window_start: str) -> bool:
     except ValueError:
         return False
     return (sample_dt - list_dt).days <= 365
+
+
+def _parse_iso_date(value: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 def _load_manifest_entries(data_root: Path) -> list[dict[str, Any]]:

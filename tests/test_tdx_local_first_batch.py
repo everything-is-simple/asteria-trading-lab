@@ -192,6 +192,194 @@ class TdxLocalFirstBatchTest(unittest.TestCase):
         for report in [build_report, readiness, front_filter, record_drafts, trial, coverage]:
             self.assertTrue(FORBIDDEN_FIELDS.isdisjoint(report.keys()))
 
+    def test_build_first_batch_sample_package_blocks_when_industry_labels_do_not_overlap_window(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            offline_root = root / "offline"
+            duckdb_root = root / "duckdb"
+            tdx_root = root / "tdx"
+            data_root = root / "data-root"
+            duckdb_root.mkdir()
+            (tdx_root / "vipdoc").mkdir(parents=True)
+
+            day_rows = [
+                (20260324, 1000, 1010, 990, 1005, 1005000.0, 100000),
+                (20260325, 1005, 1020, 1000, 1015, 1015000.0, 110000),
+            ]
+            write_day_records_file = offline_root / "raw" / "sz" / "lday" / "sz000001.day"
+            write_day_records(write_day_records_file, day_rows)
+
+            import duckdb
+
+            con = duckdb.connect(str(duckdb_root / "market_meta.duckdb"))
+            con.execute("create schema market_meta")
+            con.execute(
+                """
+                create table market_meta.market_meta.instrument_master (
+                    symbol varchar,
+                    asset_type varchar,
+                    exchange varchar,
+                    name varchar,
+                    list_dt date,
+                    delist_dt date,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.execute(
+                """
+                create table market_meta.market_meta.industry_block_relation (
+                    symbol varchar,
+                    asset_type varchar,
+                    relation_type varchar,
+                    relation_code varchar,
+                    relation_name varchar,
+                    effective_from date,
+                    effective_to date,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.execute(
+                """
+                insert into market_meta.market_meta.instrument_master values
+                ('sz000001', 'stock', 'SZ', 'Ping An Bank', '1991-04-03', null, 'run-1', 'v1', 'r1', 'hash-1')
+                """
+            )
+            con.execute(
+                """
+                insert into market_meta.market_meta.industry_block_relation values
+                ('sz000001', 'stock', 'industry', 'T1001', 'Bank', '2026-04-23', null, 'run-1', 'v1', 'r1', 'hash-1')
+                """
+            )
+            con.close()
+
+            sample_entries = [
+                {
+                    "ts_code": "000001.SZ",
+                    "sample_window_start": "2026-03-24",
+                    "sample_window_end": "2026-03-25",
+                    "expected_structure_target": "meaningful",
+                    "selection_reason": "window must not borrow future industry labels",
+                    "evidence_ref": "unit-test:future-only-industry",
+                }
+            ]
+
+            report = build_first_batch_sample_package(
+                data_root=data_root,
+                tdx_root=tdx_root,
+                offline_root=offline_root,
+                duckdb_root=duckdb_root,
+                sample_entries=sample_entries,
+                generated_at="2026-06-27T09:00:00+08:00",
+            )
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertIn("industry_membership_window_not_overlapping:000001.SZ", report["issues"])
+        self.assertEqual(report["generated_sample_count"], 0)
+        self.assertTrue(FORBIDDEN_FIELDS.isdisjoint(report))
+
+    def test_build_first_batch_sample_package_selects_overlapping_industry_label(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            offline_root = root / "offline"
+            duckdb_root = root / "duckdb"
+            tdx_root = root / "tdx"
+            data_root = root / "data-root"
+            duckdb_root.mkdir()
+            (tdx_root / "vipdoc").mkdir(parents=True)
+
+            write_day_records(offline_root / "raw" / "sz" / "lday" / "sz000001.day", [
+                (20260324, 1000, 1010, 990, 1005, 1005000.0, 100000),
+                (20260325, 1005, 1020, 1000, 1015, 1015000.0, 110000),
+            ])
+
+            import duckdb
+
+            con = duckdb.connect(str(duckdb_root / "market_meta.duckdb"))
+            con.execute("create schema market_meta")
+            con.execute(
+                """
+                create table market_meta.market_meta.instrument_master (
+                    symbol varchar,
+                    asset_type varchar,
+                    exchange varchar,
+                    name varchar,
+                    list_dt date,
+                    delist_dt date,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.execute(
+                """
+                create table market_meta.market_meta.industry_block_relation (
+                    symbol varchar,
+                    asset_type varchar,
+                    relation_type varchar,
+                    relation_code varchar,
+                    relation_name varchar,
+                    effective_from date,
+                    effective_to date,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.execute(
+                """
+                insert into market_meta.market_meta.instrument_master values
+                ('sz000001', 'stock', 'SZ', 'Ping An Bank', '1991-04-03', null, 'run-1', 'v1', 'r1', 'hash-1')
+                """
+            )
+            con.executemany(
+                """
+                insert into market_meta.market_meta.industry_block_relation values
+                (?, 'stock', 'industry', ?, ?, ?, ?, 'run-1', 'v1', 'r1', 'hash-1')
+                """,
+                [
+                    ("sz000001", "T0001", "OldBank", "2025-01-01", "2026-03-23"),
+                    ("sz000001", "T1001", "Bank", "2026-03-24", None),
+                    ("sz000001", "T9999", "FutureBank", "2026-04-23", None),
+                ],
+            )
+            con.close()
+
+            sample_entries = [
+                {
+                    "ts_code": "000001.SZ",
+                    "sample_window_start": "2026-03-24",
+                    "sample_window_end": "2026-03-25",
+                    "expected_structure_target": "meaningful",
+                    "selection_reason": "window should align to overlapping industry label",
+                    "evidence_ref": "unit-test:aligned-industry",
+                }
+            ]
+
+            report = build_first_batch_sample_package(
+                data_root=data_root,
+                tdx_root=tdx_root,
+                offline_root=offline_root,
+                duckdb_root=duckdb_root,
+                sample_entries=sample_entries,
+                generated_at="2026-06-27T09:00:00+08:00",
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["sw_file"], "ashare/sw-industry-membership-v0.1.csv")
+        self.assertEqual(report["generated_sample_count"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
