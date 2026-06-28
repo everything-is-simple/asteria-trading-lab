@@ -13,9 +13,9 @@
 | 样本 | 候选 | review_status | 说明 |
 |---|---|---|---|
 | `000001.SZ` | `t1` | `review_required` | `open_center` 属于真实执行动作，值得进入后续 T+1 事实研究。 |
-| `000001.SZ` | `price_limit` | `evidence_incomplete` | 事件日涨跌停价/触板事实仍为 `unknown`，只能先归档为证据未完备。 |
+| `000001.SZ` | `price_limit` | `review_required` | 已具备 planned-event 级最小证据语义，可进入涨跌停执行政策研究准备。 |
 | `300750.SZ` | `t1` | `review_required` | `add_on` 属于真实执行动作，值得进入后续 T+1 事实研究。 |
-| `300750.SZ` | `price_limit` | `evidence_incomplete` | 当前仍缺清晰触板/收板事实，不足以进入规则定义。 |
+| `300750.SZ` | `price_limit` | `review_required` | 已具备 planned-event 级最小证据语义，可进入涨跌停执行政策研究准备。 |
 
 说明：
 
@@ -32,6 +32,7 @@ $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-tradi
 
 - `execution_policy_review_count=6`
 - `execution_policy_review_blocked_count=1`
+- `price_limit` 在两条真实样本上进入 `review_required`
 - `000001.SZ` 生成 3 条 review records
 - `300750.SZ` 生成 3 条 review records
 - `600000.SH` 不生成 review record，只保留 blocked item

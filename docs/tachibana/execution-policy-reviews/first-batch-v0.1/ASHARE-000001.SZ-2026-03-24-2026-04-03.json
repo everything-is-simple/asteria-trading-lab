@@ -17,10 +17,9 @@
     },
     {
       "candidate_constraint_type": "price_limit",
-      "review_status": "evidence_incomplete",
+      "review_status": "review_required",
       "review_reason": [
-        "price_limit_state_still_unknown_on_planned_event",
-        "need_explicit_limit_state_before_any_price_limit_policy_definition"
+        "price_limit_event_fact_ready_for_policy_research"
       ],
       "blocked_reason": [],
       "evidence_ref": [

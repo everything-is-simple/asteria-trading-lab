@@ -1917,6 +1917,7 @@ def _execution_constraint_snapshot(record: dict[str, Any], fact: dict[str, str])
     ts_code = fact.get("ts_code")
     trade_date = fact.get("trade_date")
     constraint_ref = f"ASHARE-CONSTRAINT-{ts_code}-{trade_date}-v0.1"
+    price_limit_event_evidence = _price_limit_event_evidence(record, fact)
     boundary_warning = [
         "constraint_snapshot_is_fact_reference_not_execution_rule",
         "do_not_infer_executability_from_constraint_snapshot",
@@ -1937,6 +1938,9 @@ def _execution_constraint_snapshot(record: dict[str, Any], fact: dict[str, str])
         "limit_down_price": _optional_float(fact.get("limit_down_price")),
         "close_limit_status": fact.get("close_limit_status"),
         "touched_limit_status": fact.get("touched_limit_status"),
+        "price_limit_event_evidence_status": price_limit_event_evidence["status"],
+        "price_limit_event_evidence_reason": price_limit_event_evidence["reason"],
+        "price_limit_event_evidence_ref": price_limit_event_evidence["evidence_ref"],
         "board_lot_size": _optional_float(fact.get("board_lot_size")),
         "executable_status": "not_evaluated",
         "institution_rule_definition_allowed": False,
@@ -2205,7 +2209,8 @@ def _execution_policy_candidate_items(
     }
 
     t1_required = _planned_event_requires_t1_review(outcome.get("planned_event"))
-    price_limit_unknown = snapshot.get("close_limit_status") == "unknown" or snapshot.get("touched_limit_status") == "unknown"
+    price_limit_event_evidence_status = str(snapshot.get("price_limit_event_evidence_status", "event_fact_missing"))
+    price_limit_event_evidence_reason = _list_value(snapshot.get("price_limit_event_evidence_reason"))
     suspension_required = bool(snapshot.get("is_suspended"))
     return [
         {
@@ -2219,10 +2224,15 @@ def _execution_policy_candidate_items(
         {
             **base,
             "candidate_constraint_type": "price_limit",
-            "candidate_status": "evidence_incomplete" if price_limit_unknown else "review_required",
-            "candidate_reason": ["price_limit_fact_unknown_on_planned_event"]
-            if price_limit_unknown
-            else ["price_limit_fact_ready_for_candidate_review"],
+            "candidate_status": "review_required"
+            if price_limit_event_evidence_status == "event_fact_ready"
+            else "evidence_incomplete",
+            "candidate_reason": ["price_limit_fact_ready_for_candidate_review"]
+            if price_limit_event_evidence_status == "event_fact_ready"
+            else ["price_limit_fact_unknown_on_planned_event"],
+            "price_limit_event_evidence_status": price_limit_event_evidence_status,
+            "price_limit_event_evidence_reason": price_limit_event_evidence_reason,
+            "price_limit_event_evidence_ref": _list_value(snapshot.get("price_limit_event_evidence_ref")),
         },
         {
             **base,
@@ -2579,6 +2589,34 @@ def _execution_policy_review_unmatched_item(candidate: dict[str, Any]) -> dict[s
 
 def _planned_event_requires_t1_review(planned_event: Any) -> bool:
     return str(planned_event or "") not in {"", "hold", "wait", "lock_candidate"}
+
+
+def _price_limit_event_evidence(record: dict[str, Any], fact: dict[str, Any]) -> dict[str, Any]:
+    planned_event = str(record.get("planned_event") or record.get("execution_event_type") or "")
+    evidence_ref = _list_value(fact.get("source_ref"))
+    if fact.get("is_suspended") == "true":
+        return {
+            "status": "event_fact_conflicted",
+            "reason": ["planned_event_conflicts_with_suspension_fact"],
+            "evidence_ref": evidence_ref,
+        }
+    if fact.get("limit_up_price") in {"", None} or fact.get("limit_down_price") in {"", None}:
+        return {
+            "status": "event_fact_missing",
+            "reason": ["planned_event_missing_price_limit_bounds"],
+            "evidence_ref": evidence_ref,
+        }
+    if planned_event in {"", "wait", "hold", "lock_candidate"}:
+        return {
+            "status": "event_fact_missing",
+            "reason": ["planned_event_does_not_require_price_limit_policy_review"],
+            "evidence_ref": evidence_ref,
+        }
+    return {
+        "status": "event_fact_ready",
+        "reason": ["planned_event_has_price_limit_bounds_without_explicit_blocking_fact"],
+        "evidence_ref": evidence_ref,
+    }
 
 
 def _execution_policy_candidate_blocked_item(outcome: dict[str, Any]) -> dict[str, Any]:

@@ -131,7 +131,7 @@ Data / Signal / Backtest 接口边界集中在 `get_interface_boundary_catalog()
 
 `ashare_intake_validator.py --audit-institution-fact-package` 会验收 `ashare/institution-facts-v0.1/*.csv` 制度事实包。该包只允许记录交易日、停牌、涨跌停价、触及/收盘涨跌停状态、整手单位与来源引用；不得出现 `limit_up_strategy / trade_accept / target_position` 等策略、Signal 或仓位字段。通过只表示可以生成执行约束快照草案，不表示 A 股规则已经转正。
 
-`data_sources.tdx_local.institution_facts` 会从本地 DuckDB `market_meta.tradability_fact` 按 `ts_code + window` 生成最小制度事实包。当前最小通电策略只使用可交易性事实：`limit_up_price / limit_down_price` 留空，`close_limit_status / touched_limit_status=unknown`，`board_lot_size=100`。它不计算完整涨跌停价，不引入 AkShare / Baostock，也不生成任何交易许可。
+`data_sources.tdx_local.institution_facts` 会从本地 DuckDB `market_meta.tradability_fact` 按 `ts_code + window` 生成最小制度事实包。当前策略会在本地日线可提供 `prev_close` 且板块口径明确时推导 `limit_up_price / limit_down_price`；`close_limit_status / touched_limit_status` 仍保持显式事实优先、缺失即 `unknown`，`board_lot_size=100`。它不定义完整涨跌停规则，不引入 AkShare / Baostock，也不生成任何交易许可。
 
 `ashare_intake_validator.py --audit-first-batch-execution-constraint-snapshots <dir> --institution-fact-root <root>` 会把已通过制度事实包验收的事实行，映射成只读 `AShareExecutionConstraintSnapshot` 草案。快照只引用 `constraint_ref / ts_code / trade_date / constraint_type / affected_execution_event / evidence_ref` 等事实字段，固定 `executable_status=not_evaluated`，因此不能直接驱动成交、PnL 或仓位调整。
 

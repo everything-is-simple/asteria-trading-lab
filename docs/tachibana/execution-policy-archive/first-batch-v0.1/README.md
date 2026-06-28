@@ -13,17 +13,17 @@
 | 样本 | 归档候选 | archive_status | 说明 |
 |---|---|---|---|
 | `000001.SZ` | `t1` | `review_required` | 进入后续执行政策研究准备。 |
-| `000001.SZ` | `price_limit` | `evidence_incomplete` | 证据未完备，继续补事实。 |
+| `000001.SZ` | `price_limit` | `review_required` | 已具备事件级最小证据语义，进入执行政策研究准备。 |
 | `000001.SZ` | `suspension_resume` | `carry_forward_required` | 本窗口未触发，自动续传。 |
 | `300750.SZ` | `t1` | `review_required` | 进入后续执行政策研究准备。 |
-| `300750.SZ` | `price_limit` | `evidence_incomplete` | 证据未完备，继续补事实。 |
+| `300750.SZ` | `price_limit` | `review_required` | 已具备事件级最小证据语义，进入执行政策研究准备。 |
 | `300750.SZ` | `suspension_resume` | `carry_forward_required` | 本窗口未触发，自动续传。 |
 
 说明：
 
 - `600000.SH` 继续作为上游 blocked item 透传，不生成 archive record。
 - `review_required` 只表示进入 `action:prepare_execution_policy_research`，不表示允许交易。
-- `evidence_incomplete` 与 `carry_forward_required` 都是有效归档结果，不是系统错误。
+- `carry_forward_required` 仍是有效归档结果，不是系统错误。
 
 ## 验证命令
 
@@ -35,8 +35,7 @@ $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-tradi
 
 - `execution_policy_archive_count=6`
 - `execution_policy_archive_blocked_count=1`
-- `archive_status_counts.review_required=2`
-- `archive_status_counts.evidence_incomplete=2`
+- `archive_status_counts.review_required=4`
 - `archive_status_counts.carry_forward_required=2`
 - `000001.SZ` 生成 3 条 archive records
 - `300750.SZ` 生成 3 条 archive records

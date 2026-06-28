@@ -2414,14 +2414,19 @@ class AShareIntakeValidatorTest(unittest.TestCase):
         self.assertEqual(report["result"], "pass")
         self.assertEqual(report["execution_policy_candidate_count"], 3)
         self.assertEqual(report["execution_policy_candidate_blocked_count"], 0)
-        self.assertEqual(report["candidate_status_counts"], {"review_required": 1, "evidence_incomplete": 1, "not_triggered_in_fact_window": 1})
+        self.assertEqual(report["candidate_status_counts"], {"review_required": 2, "not_triggered_in_fact_window": 1})
         self.assertEqual(report["next_action"], "action:review_execution_policy_candidates")
         candidates = {
             item["candidate_constraint_type"]: item
             for item in report["execution_policy_candidates"]
         }
         self.assertEqual(candidates["t1"]["candidate_status"], "review_required")
-        self.assertEqual(candidates["price_limit"]["candidate_status"], "evidence_incomplete")
+        self.assertEqual(candidates["price_limit"]["candidate_status"], "review_required")
+        self.assertEqual(candidates["price_limit"]["price_limit_event_evidence_status"], "event_fact_ready")
+        self.assertEqual(
+            candidates["price_limit"]["price_limit_event_evidence_reason"],
+            ["planned_event_has_price_limit_bounds_without_explicit_blocking_fact"],
+        )
         self.assertEqual(candidates["suspension_resume"]["candidate_status"], "not_triggered_in_fact_window")
         self.assertFalse(report["institution_rule_definition_allowed"])
         self.assertFalse(report["signal_generation_allowed"])
@@ -2438,6 +2443,50 @@ class AShareIntakeValidatorTest(unittest.TestCase):
                 "limit_up_strategy",
             ]:
                 self.assertNotIn(forbidden_field, candidate)
+
+    def test_execution_policy_candidates_keep_price_limit_evidence_incomplete_when_bounds_missing(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, review_dir = write_execution_policy_case(
+                tmp_path,
+                feasibility_status="executable",
+            )
+            fact_path = fact_root / "ashare" / "institution-facts-v0.1" / "000001.SZ.csv"
+            write_csv(
+                fact_path,
+                INSTITUTION_FACT_HEADER,
+                [[
+                    "000001.SZ",
+                    "2026-01-06",
+                    "true",
+                    "false",
+                    "",
+                    "",
+                    "unknown",
+                    "unknown",
+                    "100",
+                    "unit-test:exchange-calendar-and-price-limit",
+                ]],
+            )
+
+            report = audit_first_batch_execution_policy_candidates(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_dir,
+            )
+
+        candidates = {
+            item["candidate_constraint_type"]: item
+            for item in report["execution_policy_candidates"]
+        }
+        self.assertEqual(candidates["price_limit"]["candidate_status"], "evidence_incomplete")
+        self.assertEqual(candidates["price_limit"]["price_limit_event_evidence_status"], "event_fact_missing")
+        self.assertEqual(
+            candidates["price_limit"]["price_limit_event_evidence_reason"],
+            ["planned_event_missing_price_limit_bounds"],
+        )
 
     def test_execution_policy_candidates_emit_three_audit_records_for_constrained_outcome(self) -> None:
         fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
@@ -2462,7 +2511,7 @@ class AShareIntakeValidatorTest(unittest.TestCase):
 
         self.assertEqual(report["result"], "pass")
         self.assertEqual(report["execution_policy_candidate_count"], 3)
-        self.assertEqual(report["candidate_status_counts"]["review_required"], 1)
+        self.assertEqual(report["candidate_status_counts"]["review_required"], 2)
         self.assertEqual(report["next_action"], "action:review_execution_policy_candidates")
 
     def test_execution_policy_candidates_block_items_for_carry_forward_required_outcome(self) -> None:
@@ -2562,7 +2611,7 @@ class AShareIntakeValidatorTest(unittest.TestCase):
         report = json.loads(completed.stdout)
         self.assertEqual(report["result"], "pass")
         self.assertEqual(report["execution_policy_candidate_count"], 3)
-        self.assertEqual(report["candidate_status_counts"]["review_required"], 1)
+        self.assertEqual(report["candidate_status_counts"]["review_required"], 2)
         self.assertFalse(report["signal_generation_allowed"])
         self.assertFalse(report["backtest_execution_allowed"])
 
@@ -2589,8 +2638,8 @@ class AShareIntakeValidatorTest(unittest.TestCase):
                     },
                     {
                         "candidate_constraint_type": "price_limit",
-                        "review_status": "evidence_incomplete",
-                        "review_reason": ["price_limit_state_still_unknown_on_planned_event"],
+                        "review_status": "review_required",
+                        "review_reason": ["price_limit_event_fact_ready_for_policy_research"],
                         "blocked_reason": [],
                         "evidence_ref": ["ASHARE-CONSTRAINT-000001.SZ-2026-01-06-v0.1"],
                     },
@@ -2611,8 +2660,7 @@ class AShareIntakeValidatorTest(unittest.TestCase):
         self.assertEqual(
             report["review_status_counts"],
             {
-                "review_required": 1,
-                "evidence_incomplete": 1,
+                "review_required": 2,
                 "carry_forward_required": 1,
             },
         )
@@ -2697,8 +2745,8 @@ class AShareIntakeValidatorTest(unittest.TestCase):
                     },
                     {
                         "candidate_constraint_type": "price_limit",
-                        "review_status": "evidence_incomplete",
-                        "review_reason": ["price_limit_state_still_unknown_on_planned_event"],
+                        "review_status": "review_required",
+                        "review_reason": ["price_limit_event_fact_ready_for_policy_research"],
                     },
                 ],
             )
@@ -2738,8 +2786,8 @@ class AShareIntakeValidatorTest(unittest.TestCase):
                     },
                     {
                         "candidate_constraint_type": "price_limit",
-                        "review_status": "evidence_incomplete",
-                        "review_reason": ["price_limit_state_still_unknown_on_planned_event"],
+                        "review_status": "review_required",
+                        "review_reason": ["price_limit_event_fact_ready_for_policy_research"],
                     },
                 ],
             )
@@ -2912,8 +2960,8 @@ class AShareIntakeValidatorTest(unittest.TestCase):
                     },
                     {
                         "candidate_constraint_type": "price_limit",
-                        "review_status": "evidence_incomplete",
-                        "review_reason": ["price_limit_state_still_unknown_on_planned_event"],
+                        "review_status": "review_required",
+                        "review_reason": ["price_limit_event_fact_ready_for_policy_research"],
                         "blocked_reason": [],
                         "evidence_ref": ["ASHARE-CONSTRAINT-000001.SZ-2026-01-06-v0.1"],
                     },
@@ -2933,8 +2981,7 @@ class AShareIntakeValidatorTest(unittest.TestCase):
         self.assertEqual(
             report["archive_status_counts"],
             {
-                "review_required": 1,
-                "evidence_incomplete": 1,
+                "review_required": 2,
                 "carry_forward_required": 1,
             },
         )
@@ -2952,11 +2999,11 @@ class AShareIntakeValidatorTest(unittest.TestCase):
         self.assertEqual(archives["t1"]["next_action"], "action:prepare_execution_policy_research")
         self.assertEqual(
             archives["price_limit"]["archive_reason"],
-            ["execution_policy_candidate_archived_with_incomplete_evidence"],
+            ["execution_policy_candidate_archived_for_policy_research"],
         )
         self.assertEqual(
             archives["price_limit"]["next_action"],
-            "action:collect_additional_execution_evidence",
+            "action:prepare_execution_policy_research",
         )
         self.assertEqual(
             archives["suspension_resume"]["archive_reason"],
@@ -3070,8 +3117,8 @@ class AShareIntakeValidatorTest(unittest.TestCase):
                     },
                     {
                         "candidate_constraint_type": "price_limit",
-                        "review_status": "evidence_incomplete",
-                        "review_reason": ["price_limit_state_still_unknown_on_planned_event"],
+                        "review_status": "review_required",
+                        "review_reason": ["price_limit_event_fact_ready_for_policy_research"],
                     },
                 ],
             )
@@ -3130,8 +3177,8 @@ class AShareIntakeValidatorTest(unittest.TestCase):
                     },
                     {
                         "candidate_constraint_type": "price_limit",
-                        "review_status": "evidence_incomplete",
-                        "review_reason": ["price_limit_state_still_unknown_on_planned_event"],
+                        "review_status": "review_required",
+                        "review_reason": ["price_limit_event_fact_ready_for_policy_research"],
                         "blocked_reason": [],
                         "evidence_ref": ["ASHARE-CONSTRAINT-000001.SZ-2026-01-06-v0.1"],
                     },
@@ -3151,8 +3198,7 @@ class AShareIntakeValidatorTest(unittest.TestCase):
         self.assertEqual(
             report["research_prep_status_counts"],
             {
-                "review_required": 1,
-                "evidence_incomplete": 1,
+                "review_required": 2,
                 "carry_forward_required": 1,
             },
         )
@@ -3170,11 +3216,11 @@ class AShareIntakeValidatorTest(unittest.TestCase):
         self.assertEqual(preps["t1"]["next_action"], "action:prepare_execution_policy_research")
         self.assertEqual(
             preps["price_limit"]["research_prep_reason"],
-            ["execution_policy_candidate_research_preparation_requires_additional_evidence"],
+            ["execution_policy_candidate_ready_for_research_preparation"],
         )
         self.assertEqual(
             preps["price_limit"]["next_action"],
-            "action:collect_additional_execution_evidence",
+            "action:prepare_execution_policy_research",
         )
         self.assertEqual(
             preps["suspension_resume"]["research_prep_reason"],
@@ -3218,8 +3264,8 @@ class AShareIntakeValidatorTest(unittest.TestCase):
                     },
                     {
                         "candidate_constraint_type": "price_limit",
-                        "review_status": "evidence_incomplete",
-                        "review_reason": ["price_limit_state_still_unknown_on_planned_event"],
+                        "review_status": "review_required",
+                        "review_reason": ["price_limit_event_fact_ready_for_policy_research"],
                     },
                 ],
             )
@@ -3239,7 +3285,7 @@ class AShareIntakeValidatorTest(unittest.TestCase):
         }
         self.assertEqual(agendas["t1"]["agenda_status"], "ready_for_research")
         self.assertEqual(agendas["t1"]["sample_count"], 1)
-        self.assertEqual(agendas["price_limit"]["agenda_status"], "await_additional_evidence")
+        self.assertEqual(agendas["price_limit"]["agenda_status"], "ready_for_research")
         self.assertEqual(agendas["suspension_resume"]["agenda_status"], "carry_forward_required")
         self.assertEqual(report["next_action"], "action:prepare_execution_policy_research")
 
@@ -3291,8 +3337,8 @@ class AShareIntakeValidatorTest(unittest.TestCase):
                 candidate_reviews=[
                     {
                         "candidate_constraint_type": "price_limit",
-                        "review_status": "evidence_incomplete",
-                        "review_reason": ["price_limit_state_still_unknown_on_planned_event"],
+                        "review_status": "review_required",
+                        "review_reason": ["price_limit_event_fact_ready_for_policy_research"],
                     }
                 ],
             )
