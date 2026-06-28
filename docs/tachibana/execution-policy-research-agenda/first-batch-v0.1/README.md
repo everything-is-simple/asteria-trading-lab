@@ -20,6 +20,7 @@
 
 - `600000.SH` 继续作为上游 blocked item 透传，不单独生成 agenda item。
 - `ready_for_research` 只表示可以进入制度研究准备，不表示允许交易。
+- 当前 `price_limit` 的 `ready_for_research` 依赖的是 planned-event 关系事实最小语义，不等于 `close_limit_status / touched_limit_status` 已经补齐。
 - `carry_forward_required` 是正常研究状态，不是系统错误。
 
 ## 验证命令

@@ -95,6 +95,25 @@ QUALITY_STATUSES = {"ready", "incomplete", "source_missing", "disputed"}
 BOOLEAN_VALUES = {"true", "false"}
 LIMIT_CLOSE_STATUSES = {"none", "limit_up", "limit_down", "near_limit_up", "near_limit_down", "unknown"}
 TOUCHED_LIMIT_STATUSES = {"none", "touched_up", "touched_down", "both", "unknown"}
+PRICE_LIMIT_EVENT_RELATION_STATUSES = {
+    "relation_clear",
+    "relation_constrained",
+    "relation_blocked",
+    "relation_unknown",
+}
+PRICE_LIMIT_EVENT_FILL_BLOCKING_STATUSES = {
+    "no_explicit_fill_blocking_fact",
+    "explicit_fill_blocking_fact",
+    "fill_blocking_unknown",
+    "not_applicable",
+}
+PRICE_LIMIT_EVENT_LIMIT_PROXIMITY_STATUSES = {
+    "not_near_limit",
+    "near_limit",
+    "at_limit",
+    "proximity_unknown",
+    "not_applicable",
+}
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 METHOD_PM_PLAN_DRAFT_FIELDS = [
     "ashare_sample_id",
@@ -1918,6 +1937,7 @@ def _execution_constraint_snapshot(record: dict[str, Any], fact: dict[str, str])
     trade_date = fact.get("trade_date")
     constraint_ref = f"ASHARE-CONSTRAINT-{ts_code}-{trade_date}-v0.1"
     price_limit_event_evidence = _price_limit_event_evidence(record, fact)
+    price_limit_event_relation = _price_limit_event_relation(record, fact)
     boundary_warning = [
         "constraint_snapshot_is_fact_reference_not_execution_rule",
         "do_not_infer_executability_from_constraint_snapshot",
@@ -1941,6 +1961,11 @@ def _execution_constraint_snapshot(record: dict[str, Any], fact: dict[str, str])
         "price_limit_event_evidence_status": price_limit_event_evidence["status"],
         "price_limit_event_evidence_reason": price_limit_event_evidence["reason"],
         "price_limit_event_evidence_ref": price_limit_event_evidence["evidence_ref"],
+        "price_limit_event_relation_status": price_limit_event_relation["status"],
+        "price_limit_event_fill_blocking_status": price_limit_event_relation["fill_blocking_status"],
+        "price_limit_event_limit_proximity": price_limit_event_relation["limit_proximity"],
+        "price_limit_event_relation_reason": price_limit_event_relation["reason"],
+        "price_limit_event_relation_ref": price_limit_event_relation["evidence_ref"],
         "board_lot_size": _optional_float(fact.get("board_lot_size")),
         "executable_status": "not_evaluated",
         "institution_rule_definition_allowed": False,
@@ -2211,6 +2236,10 @@ def _execution_policy_candidate_items(
     t1_required = _planned_event_requires_t1_review(outcome.get("planned_event"))
     price_limit_event_evidence_status = str(snapshot.get("price_limit_event_evidence_status", "event_fact_missing"))
     price_limit_event_evidence_reason = _list_value(snapshot.get("price_limit_event_evidence_reason"))
+    price_limit_event_relation_status = str(
+        snapshot.get("price_limit_event_relation_status", "relation_unknown")
+    )
+    price_limit_event_relation_reason = _list_value(snapshot.get("price_limit_event_relation_reason"))
     suspension_required = bool(snapshot.get("is_suspended"))
     return [
         {
@@ -2225,14 +2254,19 @@ def _execution_policy_candidate_items(
             **base,
             "candidate_constraint_type": "price_limit",
             "candidate_status": "review_required"
-            if price_limit_event_evidence_status == "event_fact_ready"
+            if price_limit_event_relation_status in {"relation_clear", "relation_constrained"}
             else "evidence_incomplete",
-            "candidate_reason": ["price_limit_fact_ready_for_candidate_review"]
-            if price_limit_event_evidence_status == "event_fact_ready"
-            else ["price_limit_fact_unknown_on_planned_event"],
+            "candidate_reason": ["price_limit_relation_ready_for_candidate_review"]
+            if price_limit_event_relation_status in {"relation_clear", "relation_constrained"}
+            else ["price_limit_relation_still_unknown_on_planned_event"],
             "price_limit_event_evidence_status": price_limit_event_evidence_status,
             "price_limit_event_evidence_reason": price_limit_event_evidence_reason,
             "price_limit_event_evidence_ref": _list_value(snapshot.get("price_limit_event_evidence_ref")),
+            "price_limit_event_relation_status": price_limit_event_relation_status,
+            "price_limit_event_fill_blocking_status": snapshot.get("price_limit_event_fill_blocking_status"),
+            "price_limit_event_limit_proximity": snapshot.get("price_limit_event_limit_proximity"),
+            "price_limit_event_relation_reason": price_limit_event_relation_reason,
+            "price_limit_event_relation_ref": _list_value(snapshot.get("price_limit_event_relation_ref")),
         },
         {
             **base,
@@ -2615,6 +2649,60 @@ def _price_limit_event_evidence(record: dict[str, Any], fact: dict[str, Any]) ->
     return {
         "status": "event_fact_ready",
         "reason": ["planned_event_has_price_limit_bounds_without_explicit_blocking_fact"],
+        "evidence_ref": evidence_ref,
+    }
+
+
+def _price_limit_event_relation(record: dict[str, Any], fact: dict[str, Any]) -> dict[str, Any]:
+    planned_event = str(record.get("planned_event") or record.get("execution_event_type") or "")
+    evidence_ref = _list_value(fact.get("source_ref"))
+    is_suspended = fact.get("is_suspended") == "true"
+    has_bounds = fact.get("limit_up_price") not in {"", None} and fact.get("limit_down_price") not in {"", None}
+
+    if is_suspended:
+        return {
+            "status": "relation_blocked",
+            "fill_blocking_status": "explicit_fill_blocking_fact",
+            "limit_proximity": "not_applicable",
+            "reason": ["planned_event_has_explicit_price_limit_blocking_fact"],
+            "evidence_ref": evidence_ref,
+        }
+
+    if not has_bounds:
+        return {
+            "status": "relation_unknown",
+            "fill_blocking_status": "fill_blocking_unknown",
+            "limit_proximity": "proximity_unknown",
+            "reason": ["planned_event_limit_proximity_is_unknown"],
+            "evidence_ref": evidence_ref,
+        }
+
+    if planned_event == "open_center":
+        return {
+            "status": "relation_clear",
+            "fill_blocking_status": "no_explicit_fill_blocking_fact",
+            "limit_proximity": "not_applicable",
+            "reason": ["planned_event_has_no_explicit_price_limit_blocking_fact"],
+            "evidence_ref": evidence_ref,
+        }
+
+    if planned_event == "add_on":
+        return {
+            "status": "relation_constrained",
+            "fill_blocking_status": "fill_blocking_unknown",
+            "limit_proximity": "proximity_unknown",
+            "reason": [
+                "planned_event_limit_proximity_is_unknown",
+                "planned_event_requires_higher_price_limit_resolution",
+            ],
+            "evidence_ref": evidence_ref,
+        }
+
+    return {
+        "status": "relation_unknown",
+        "fill_blocking_status": "fill_blocking_unknown",
+        "limit_proximity": "proximity_unknown",
+        "reason": ["planned_event_limit_proximity_is_unknown"],
         "evidence_ref": evidence_ref,
     }
 

@@ -2444,6 +2444,86 @@ class AShareIntakeValidatorTest(unittest.TestCase):
             ]:
                 self.assertNotIn(forbidden_field, candidate)
 
+    def test_execution_policy_candidates_emit_relation_clear_for_open_center(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, review_dir = write_execution_policy_case(
+                tmp_path,
+                feasibility_status="executable",
+            )
+
+            report = audit_first_batch_execution_policy_candidates(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_dir,
+            )
+
+        candidates = {
+            item["candidate_constraint_type"]: item
+            for item in report["execution_policy_candidates"]
+        }
+        price_limit = candidates["price_limit"]
+        self.assertEqual(price_limit["candidate_status"], "review_required")
+        self.assertEqual(price_limit["price_limit_event_relation_status"], "relation_clear")
+        self.assertEqual(
+            price_limit["price_limit_event_fill_blocking_status"],
+            "no_explicit_fill_blocking_fact",
+        )
+        self.assertEqual(
+            price_limit["price_limit_event_limit_proximity"],
+            "not_applicable",
+        )
+        self.assertEqual(
+            price_limit["price_limit_event_relation_reason"],
+            ["planned_event_has_no_explicit_price_limit_blocking_fact"],
+        )
+
+    def test_execution_policy_candidates_emit_relation_constrained_for_add_on(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, review_dir = write_execution_policy_case(
+                tmp_path,
+                execution_event_type="add_on",
+                method_action="pullback_add",
+                pm_action="add_on",
+                feasibility_status="constrained",
+                verdict_reason=["manual_constraint_confirmed"],
+                blocked_reason=["limit_state_unknown_on_planned_event"],
+            )
+
+            report = audit_first_batch_execution_policy_candidates(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_dir,
+            )
+
+        candidates = {
+            item["candidate_constraint_type"]: item
+            for item in report["execution_policy_candidates"]
+        }
+        price_limit = candidates["price_limit"]
+        self.assertEqual(price_limit["candidate_status"], "review_required")
+        self.assertEqual(price_limit["price_limit_event_relation_status"], "relation_constrained")
+        self.assertEqual(
+            price_limit["price_limit_event_fill_blocking_status"],
+            "fill_blocking_unknown",
+        )
+        self.assertEqual(
+            price_limit["price_limit_event_limit_proximity"],
+            "proximity_unknown",
+        )
+        self.assertEqual(
+            price_limit["price_limit_event_relation_reason"],
+            [
+                "planned_event_limit_proximity_is_unknown",
+                "planned_event_requires_higher_price_limit_resolution",
+            ],
+        )
+
     def test_execution_policy_candidates_keep_price_limit_evidence_incomplete_when_bounds_missing(self) -> None:
         fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
         with tempfile.TemporaryDirectory() as tmp:
@@ -2486,6 +2566,56 @@ class AShareIntakeValidatorTest(unittest.TestCase):
         self.assertEqual(
             candidates["price_limit"]["price_limit_event_evidence_reason"],
             ["planned_event_missing_price_limit_bounds"],
+        )
+        self.assertEqual(candidates["price_limit"]["price_limit_event_relation_status"], "relation_unknown")
+        self.assertEqual(
+            candidates["price_limit"]["price_limit_event_fill_blocking_status"],
+            "fill_blocking_unknown",
+        )
+
+    def test_execution_policy_candidates_emit_relation_blocked_when_suspended(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, review_dir = write_execution_policy_case(
+                tmp_path,
+                feasibility_status="executable",
+            )
+            fact_path = fact_root / "ashare" / "institution-facts-v0.1" / "000001.SZ.csv"
+            write_csv(
+                fact_path,
+                INSTITUTION_FACT_HEADER,
+                [[
+                    "000001.SZ",
+                    "2026-01-06",
+                    "true",
+                    "true",
+                    "12.10",
+                    "9.90",
+                    "unknown",
+                    "unknown",
+                    "100",
+                    "unit-test:suspended",
+                ]],
+            )
+
+            report = audit_first_batch_execution_policy_candidates(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_dir,
+            )
+
+        candidates = {
+            item["candidate_constraint_type"]: item
+            for item in report["execution_policy_candidates"]
+        }
+        price_limit = candidates["price_limit"]
+        self.assertEqual(price_limit["candidate_status"], "evidence_incomplete")
+        self.assertEqual(price_limit["price_limit_event_relation_status"], "relation_blocked")
+        self.assertEqual(
+            price_limit["price_limit_event_fill_blocking_status"],
+            "explicit_fill_blocking_fact",
         )
 
     def test_execution_policy_candidates_emit_three_audit_records_for_constrained_outcome(self) -> None:
@@ -3288,6 +3418,51 @@ class AShareIntakeValidatorTest(unittest.TestCase):
         self.assertEqual(agendas["price_limit"]["agenda_status"], "ready_for_research")
         self.assertEqual(agendas["suspension_resume"]["agenda_status"], "carry_forward_required")
         self.assertEqual(report["next_action"], "action:prepare_execution_policy_research")
+
+    def test_execution_policy_research_agenda_keeps_price_limit_ready_with_relation_constrained(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, verdict_dir = write_execution_policy_case(
+                tmp_path,
+                execution_event_type="add_on",
+                method_action="pullback_add",
+                pm_action="add_on",
+                feasibility_status="constrained",
+                verdict_reason=["manual_constraint_confirmed"],
+                blocked_reason=["limit_state_unknown_on_planned_event"],
+            )
+            review_root = tmp_path / "policy-reviews"
+            write_execution_policy_review_file(
+                review_root,
+                sample_id="ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                ts_code="000001.SZ",
+                candidate_reviews=[
+                    {
+                        "candidate_constraint_type": "t1",
+                        "review_status": "review_required",
+                        "review_reason": ["planned_event_requires_t1_policy_review"],
+                    },
+                    {
+                        "candidate_constraint_type": "price_limit",
+                        "review_status": "review_required",
+                        "review_reason": ["price_limit_event_fact_ready_for_policy_research"],
+                    }
+                ],
+            )
+
+            report = audit_first_batch_execution_policy_research_agenda(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_root,
+            )
+
+        agendas = {
+            item["candidate_constraint_type"]: item
+            for item in report["execution_policy_research_agendas"]
+        }
+        self.assertEqual(agendas["price_limit"]["agenda_status"], "ready_for_research")
 
     def test_execution_policy_research_prep_preserves_upstream_blocked_items(self) -> None:
         fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"

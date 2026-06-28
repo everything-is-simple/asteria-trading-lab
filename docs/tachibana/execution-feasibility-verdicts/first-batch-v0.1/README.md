@@ -13,7 +13,7 @@
 | 样本 | status | 说明 |
 |---|---|---|
 | `000001.SZ` | `executable` | 计划事件为 `open_center`；制度事实显示事件日可交易、未停牌、整手单位明确，当前没有已知制度事实直接阻断该 replay。 |
-| `300750.SZ` | `constrained` | 计划事件为 `add_on`；事件日可交易，但涨跌停价与触板状态仍是 `unknown`，且该样本本身属于 `Q-PRESSURE-ADJUST`，需要额外 PM/约束复核。 |
+| `300750.SZ` | `constrained` | 计划事件为 `add_on`；事件日可交易，但当前仍需要更高的 planned-event price-limit relation resolution 来表达是否近板及是否存在显式追加阻断，且该样本本身属于 `Q-PRESSURE-ADJUST`，需要额外 PM/约束复核。 |
 | `600000.SH` | `carry_forward_required` | 计划事件为 `lock_candidate`，Method 动作为 `wait_no_action`；它更像 PM 台账延续，不像已可回放的成交事件，因此先续传，不硬判成交可行。 |
 
 ## 验证命令
@@ -28,4 +28,3 @@ $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-tradi
 - `000001.SZ -> executable`
 - `300750.SZ -> constrained`
 - `600000.SH -> carry_forward_required`
-
