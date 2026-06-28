@@ -67,6 +67,7 @@
 - `1976`：全年事实骨架已建立，`1976-03/04/05/10/11/12` 已部分精读
 - 近期目标：当前主攻不是修改交易规则，而是把 MALF 做成立花法的前置认知过滤器。机器链路已经按 `A 股接入包复核 -> MALF snapshot -> rhythm_meaning -> candidate_table_gate -> Method/PM bridge -> Backtest Input -> cognitive_pipeline_gate` 收束；只有总闸门通过后，才允许进入 A 股制度约束审计。
 - 远期目标：A 股适配版与回测报告
+- 当前项目口径：`PAS` 已明确搁置，不纳入当前施工主线与进度估算。
 
 ## 当前闸门纪律
 

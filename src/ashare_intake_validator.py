@@ -1620,6 +1620,54 @@ def audit_first_batch_execution_policy_research_prep(
     }
 
 
+def audit_first_batch_execution_policy_research_agenda(
+    data_root: str | Path,
+    plan_dir: str | Path,
+    institution_fact_root: str | Path,
+    review_dir: str | Path,
+) -> dict[str, Any]:
+    prep_report = audit_first_batch_execution_policy_research_prep(
+        data_root,
+        plan_dir,
+        institution_fact_root,
+        review_dir,
+    )
+    if prep_report["result"] != "pass":
+        return {
+            "result": "blocked",
+            "execution_policy_research_agenda_count": 0,
+            "execution_policy_research_agendas": [],
+            "execution_policy_research_agenda_blocked_count": 0,
+            "execution_policy_research_agenda_blocked_items": [],
+            "agenda_status_counts": {},
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": prep_report["next_action"],
+            "issues": ["execution_policy_research_agenda_requires_valid_research_prep"],
+            "execution_policy_research_prep_report": prep_report,
+        }
+
+    agendas = _execution_policy_research_agenda_items(
+        prep_report.get("execution_policy_research_preps", [])
+    )
+    blocked_items = list(prep_report.get("execution_policy_research_prep_blocked_items", []))
+    return {
+        "result": "pass",
+        "execution_policy_research_agenda_count": len(agendas),
+        "execution_policy_research_agendas": agendas,
+        "execution_policy_research_agenda_blocked_count": len(blocked_items),
+        "execution_policy_research_agenda_blocked_items": blocked_items,
+        "agenda_status_counts": _count_by_field(agendas, "agenda_status"),
+        "institution_rule_definition_allowed": False,
+        "signal_generation_allowed": False,
+        "backtest_execution_allowed": False,
+        "next_action": _execution_policy_research_agenda_report_next_action(agendas, blocked_items),
+        "issues": [],
+        "execution_policy_research_prep_report": prep_report,
+    }
+
+
 def _method_pm_plan_draft_index(plan_dir: Path) -> dict[str, dict[str, Any]]:
     if not plan_dir.exists() or not plan_dir.is_dir():
         return {}
@@ -2427,6 +2475,76 @@ def _execution_policy_research_prep_report_next_action(
     if any(str(item.get("research_prep_status")) == "review_required" for item in preps):
         return "action:prepare_execution_policy_research"
     if preps or blocked_items:
+        return "action:collect_additional_execution_evidence"
+    return "action:prepare_execution_policy_research"
+
+
+def _execution_policy_research_agenda_items(preps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for prep in preps:
+        grouped.setdefault(str(prep.get("candidate_constraint_type")), []).append(prep)
+
+    items: list[dict[str, Any]] = []
+    for constraint_type, records in grouped.items():
+        statuses = {str(item.get("research_prep_status")) for item in records}
+        if "review_required" in statuses:
+            agenda_status = "ready_for_research"
+            agenda_reason = ["execution_policy_research_topic_has_ready_candidates"]
+            next_action = "action:prepare_execution_policy_research"
+        elif "evidence_incomplete" in statuses:
+            agenda_status = "await_additional_evidence"
+            agenda_reason = ["execution_policy_research_topic_requires_additional_evidence"]
+            next_action = "action:collect_additional_execution_evidence"
+        elif "carry_forward_required" in statuses:
+            agenda_status = "carry_forward_required"
+            agenda_reason = ["execution_policy_research_topic_carry_forward_required"]
+            next_action = "action:collect_additional_execution_evidence"
+        else:
+            agenda_status = "blocked"
+            agenda_reason = ["execution_policy_research_topic_blocked"]
+            next_action = "action:collect_additional_execution_evidence"
+
+        items.append(
+            {
+                "record_type": "AShareExecutionPolicyResearchAgendaItem",
+                "candidate_constraint_type": constraint_type,
+                "agenda_status": agenda_status,
+                "agenda_reason": agenda_reason,
+                "sample_count": len(records),
+                "ready_sample_ids": [
+                    item.get("ashare_sample_id")
+                    for item in records
+                    if str(item.get("research_prep_status")) == "review_required"
+                ],
+                "blocked_sample_ids": [
+                    item.get("ashare_sample_id")
+                    for item in records
+                    if str(item.get("research_prep_status")) != "review_required"
+                ],
+                "evidence_ref": _unique_preserve_order(
+                    [
+                        ref
+                        for item in records
+                        for ref in _list_value(item.get("evidence_ref"))
+                    ]
+                ),
+                "institution_rule_definition_allowed": False,
+                "signal_generation_allowed": False,
+                "backtest_execution_allowed": False,
+                "next_action": next_action,
+            }
+        )
+
+    return sorted(items, key=lambda item: str(item.get("candidate_constraint_type")))
+
+
+def _execution_policy_research_agenda_report_next_action(
+    agendas: list[dict[str, Any]],
+    blocked_items: list[dict[str, Any]],
+) -> str:
+    if any(str(item.get("agenda_status")) == "ready_for_research" for item in agendas):
+        return "action:prepare_execution_policy_research"
+    if agendas or blocked_items:
         return "action:collect_additional_execution_evidence"
     return "action:prepare_execution_policy_research"
 
@@ -3388,6 +3506,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Build read-only execution policy research prep records from execution policy archive results.",
     )
     parser.add_argument(
+        "--audit-first-batch-execution-policy-research-agenda",
+        help="Build read-only execution policy research agenda items from research prep results.",
+    )
+    parser.add_argument(
         "--method-pm-plan-dir",
         help="Method/PM plan directory required by execution-feasibility verdict merge.",
     )
@@ -3412,6 +3534,25 @@ def main(argv: list[str] | None = None) -> int:
             args.method_pm_plan_dir,
             fact_root,
             args.audit_first_batch_execution_policy_research_prep,
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report["result"] == "pass" else 1
+
+    if args.audit_first_batch_execution_policy_research_agenda:
+        if not args.method_pm_plan_dir:
+            report = {
+                "result": "blocked",
+                "next_action": "action:prepare_execution_policy_research",
+                "issues": ["missing_method_pm_plan_dir_for_execution_policy_research_agenda"],
+            }
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 1
+        fact_root = args.institution_fact_root or args.root
+        report = audit_first_batch_execution_policy_research_agenda(
+            args.root,
+            args.method_pm_plan_dir,
+            fact_root,
+            args.audit_first_batch_execution_policy_research_agenda,
         )
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0 if report["result"] == "pass" else 1

@@ -39,7 +39,7 @@
 
 已落地并验证通过的链路为：
 
-`readiness -> front_filter_run -> record_drafts -> sample_table_trial -> method_pm_plan_merge -> backtest_input_snapshots -> institution_feasibility_records -> execution_constraint_snapshots -> execution_feasibility_gate -> execution_feasibility_verdicts -> verdict_merge -> execution_feasibility_outcomes -> execution_policy_candidates -> execution_policy_review_merge -> execution_policy_archive -> execution_policy_research_prep`
+`readiness -> front_filter_run -> record_drafts -> sample_table_trial -> method_pm_plan_merge -> backtest_input_snapshots -> institution_feasibility_records -> execution_constraint_snapshots -> execution_feasibility_gate -> execution_feasibility_verdicts -> verdict_merge -> execution_feasibility_outcomes -> execution_policy_candidates -> execution_policy_review_merge -> execution_policy_archive -> execution_policy_research_prep -> execution_policy_research_agenda`
 
 当前下一步动作是：
 
@@ -61,8 +61,12 @@
 ## 5. 未落地但已有定义
 
 - MALF 完整 Core/Range/Lifespan/Probability 引擎
-- PAS 模块
 - Signal 模块
 - A 股适配版完整回测执行层
 
 这些部分当前应明确标记为“定义已存在，代码未实现”。
+
+另需固定当前项目口径：
+
+- `PAS` 虽在历史 Definitive 文档体系中出现，但在本项目当前路线中已明确搁置。
+- 因此当前真实主线不再按 `MALF -> PAS -> Signal -> Backtest` 组织施工，而是按本文档上方所列的实际审计链路推进。
