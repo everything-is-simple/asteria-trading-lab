@@ -153,14 +153,14 @@
 | `event_needs_touched_limit_status` | `conditional` |
 | `current_minimum_research_semantics_ready` | `true` |
 | `next_missing_fact` | `planned_event 是否接近涨跌停边界、是否存在显式追加失败或无法继续加码的事件关系事实` |
-| `recommended_fact_layer` | `require_hybrid_fact_set` |
+| `recommended_fact_layer` | `prefer_planned_event_relation_fact` |
 | `evidence_ref` | `ASHARE-CONSTRAINT-300750.SZ-2026-04-03-v0.1`; `../method-pm-plans/first-batch-v0.1/ASHARE-300750.SZ-2026-03-24-2026-04-03.json`; `../execution-feasibility-verdicts/first-batch-v0.1/ASHARE-300750.SZ-2026-03-24-2026-04-03.json`; `../execution-policy-reviews/first-batch-v0.1/ASHARE-300750.SZ-2026-03-24-2026-04-03.json` |
 
 结论：
 
 - `300750.SZ / add_on` 已经证明：仅靠“有边界、未停牌”就能进入研究准备，但还不足以回答“追加动作是否受板边关系影响”。
 - 对这个样本，planned-event 关系事实仍然是第一缺口；只是它比 `open_center` 更有可能在后续逼出 `close/touched` 的补充需求。
-- 因此当前推荐不是单纯 `prefer_close_touched_status`，而是 `require_hybrid_fact_set` 的候选方向：先补事件关系事实，再观察是否仍需 `close/touched` 支撑。
+- 因此当前推荐仍然是 `prefer_planned_event_relation_fact`：先补事件关系事实，再观察后续样本是否真的重复证明必须升级到 `close/touched` 支撑。
 
 ## 6. 三路方案对比矩阵
 
@@ -186,14 +186,14 @@
 本轮总判断如下：
 
 - `000001.SZ / open_center`：`prefer_planned_event_relation_fact`
-- `300750.SZ / add_on`：`require_hybrid_fact_set`
+- `300750.SZ / add_on`：`prefer_planned_event_relation_fact`
 - 当前总议题的下一轮事实补强优先级：`prefer_planned_event_relation_fact`
 
 原因是：
 
 1. 它最符合当前仓库已经建立的“执行后置、规则后置”边界。
 2. 它最贴近现有缺口的真实形状，也就是“planned-event 当天是否存在显式制度阻断或接近阻断的关系事实”。
-3. 它能先服务 `open_center`，再逐步验证 `add_on` 是否需要升级到混合方案。
+3. 它能先服务 `open_center`，并继续在后续 `add_on` 样本中验证是否真的需要升级到混合方案。
 
 因此，下一轮最紧要的工作不应是先把 `close_limit_status / touched_limit_status` 做成新的通用硬字段，而应先把以下研究问题写清：
 
