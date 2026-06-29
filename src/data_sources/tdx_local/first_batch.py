@@ -115,6 +115,76 @@ DEFAULT_FIRST_BATCH_SAMPLE_ENTRIES = [
     },
 ]
 
+
+DEFAULT_ADD_ON_PRICE_LIMIT_SHORTLIST_SAMPLE_ENTRIES = [
+    {
+        "ts_code": "603538.SH",
+        "trade_date": "2026-04-01",
+        "sample_window_start": "2026-03-24",
+        "sample_window_end": "2026-04-03",
+        "research_priority_group": "core",
+        "formal_review_bucket": "pressure_adjust_reopen",
+        "core_snapshot_focus": "pressure_adjust_reopen_core",
+        "selection_reason": "Core reopened-touch candidate with down-limit-side pressure-adjust value.",
+        "evidence_ref": "docs/tachibana/index/Tachibana-A股-add_on-price_limit-shortlist-intraday-review-v0.1.md#formal-review-shortlist",
+    },
+    {
+        "ts_code": "603008.SH",
+        "trade_date": "2026-03-30",
+        "sample_window_start": "2026-03-24",
+        "sample_window_end": "2026-04-03",
+        "research_priority_group": "core",
+        "formal_review_bucket": "pressure_adjust_reopen",
+        "core_snapshot_focus": "pressure_adjust_reopen_core",
+        "selection_reason": "Core reopened-touch candidate with cleaner down-limit-side pressure-adjust shape.",
+        "evidence_ref": "docs/tachibana/index/Tachibana-A股-add_on-price_limit-shortlist-intraday-review-v0.1.md#formal-review-shortlist",
+    },
+    {
+        "ts_code": "600310.SH",
+        "trade_date": "2026-03-30",
+        "sample_window_start": "2026-03-24",
+        "sample_window_end": "2026-04-03",
+        "research_priority_group": "core",
+        "formal_review_bucket": "pressure_adjust_reopen",
+        "core_snapshot_focus": "pressure_adjust_reopen_core",
+        "selection_reason": "Core reopened-touch candidate preserving scarce up-limit-side comparison value.",
+        "evidence_ref": "docs/tachibana/index/Tachibana-A股-add_on-price_limit-shortlist-intraday-review-v0.1.md#formal-review-shortlist",
+    },
+    {
+        "ts_code": "603687.SH",
+        "trade_date": "2026-03-27",
+        "sample_window_start": "2026-03-24",
+        "sample_window_end": "2026-04-03",
+        "research_priority_group": "core",
+        "formal_review_bucket": "pressure_adjust_reopen",
+        "core_snapshot_focus": "pressure_adjust_reopen_core",
+        "selection_reason": "Core reopened-touch candidate extending the pressure-adjust comparison set to a fourth sample.",
+        "evidence_ref": "docs/tachibana/index/Tachibana-A股-add_on-price_limit-shortlist-intraday-review-v0.1.md#formal-review-shortlist",
+    },
+    {
+        "ts_code": "002663.SZ",
+        "trade_date": "2026-04-03",
+        "sample_window_start": "2026-03-24",
+        "sample_window_end": "2026-04-03",
+        "research_priority_group": "backup",
+        "formal_review_bucket": "near_limit_compare",
+        "core_snapshot_focus": "near_limit_compare_backup",
+        "selection_reason": "Backup near-limit comparison sample kept for extreme down-limit-side proximity without touch.",
+        "evidence_ref": "docs/tachibana/index/Tachibana-A股-add_on-price_limit-shortlist-intraday-review-v0.1.md#formal-review-shortlist",
+    },
+    {
+        "ts_code": "000899.SZ",
+        "trade_date": "2026-03-30",
+        "sample_window_start": "2026-03-24",
+        "sample_window_end": "2026-04-03",
+        "research_priority_group": "backup",
+        "formal_review_bucket": "near_limit_compare",
+        "core_snapshot_focus": "near_limit_compare_backup",
+        "selection_reason": "Backup near-limit comparison sample kept as a steadier down-limit-side proximity control.",
+        "evidence_ref": "docs/tachibana/index/Tachibana-A股-add_on-price_limit-shortlist-intraday-review-v0.1.md#formal-review-shortlist",
+    },
+]
+
 SNAPSHOT_PRESETS = {
     "meaningful": {
         "malf_background": "alive_wave",
@@ -426,6 +496,29 @@ def build_shortlist_malf_research_prep(
             "next_action": "action:prepare_research_malf_snapshot",
         }
     )
+
+
+def default_add_on_price_limit_shortlist_sample_entries() -> list[dict[str, Any]]:
+    return deepcopy(DEFAULT_ADD_ON_PRICE_LIMIT_SHORTLIST_SAMPLE_ENTRIES)
+
+
+def build_default_add_on_price_limit_shortlist_malf_research_prep(
+    tdx_root: str | Path,
+    offline_root: str | Path,
+    duckdb_root: str | Path,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    report = build_shortlist_malf_research_prep(
+        tdx_root=tdx_root,
+        offline_root=offline_root,
+        duckdb_root=duckdb_root,
+        sample_entries=default_add_on_price_limit_shortlist_sample_entries(),
+        generated_at=generated_at,
+    )
+    report = dict(report)
+    report["research_shortlist_id"] = "add_on_price_limit_shortlist_v0.1"
+    report["research_shortlist_scope"] = "add_on_pullback_add_price_limit"
+    return _strip_forbidden_fields(report)
 
 
 def audit_first_batch_sample_coverage(data_root: str | Path) -> dict[str, Any]:

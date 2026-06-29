@@ -521,3 +521,32 @@
 推进到：
 
 - “shortlist 已经有统一 research-prep 入口，但 formal front-filter readiness 仍被真实数据边界诚实拦住”
+
+进一步往前走了一步的是，这个 shortlist 现在已经不是“需要手抄 `sample_entries` 的 helper 示例”，而是有了固定的 canonical 入口：
+
+- [first_batch.py](/Z:/asteria-trading-lab/src/data_sources/tdx_local/first_batch.py)
+  - `default_add_on_price_limit_shortlist_sample_entries()`
+  - `build_default_add_on_price_limit_shortlist_malf_research_prep(...)`
+
+这层入口把当前这 6 个样本固化成：
+
+- core 4：`603538 / 603008 / 600310 / 603687`
+- backup 2：`002663 / 000899`
+
+并且已经在真实数据根上直接跑过，当前结果仍然很整齐：
+
+- `sample_count = 6`
+- `core_sample_count = 4`
+- `backup_sample_count = 2`
+- `blocked_formal_front_filter_count = 6`
+- `snapshot_pending_formal_front_filter_count = 0`
+
+换句话说，我们现在已经可以把“下一拍要准备的核心样本是谁”固定下来，而且能稳定复跑它们的 research prep；尚未被消掉的，只剩同一个老实的真实边界：
+
+- `industry_membership_window_not_overlapping`
+
+这对下一步的意义是：
+
+1. core 4 / backup 2 不再是口头 shortlist，而是代码里可直接调用的研究对象
+2. 每次再讨论这些样本时，都可以基于同一份 canonical report，而不是临时拼字段
+3. 若之后要继续补最小 MALF snapshot，也可以直接沿这份固定 manifest 往下接

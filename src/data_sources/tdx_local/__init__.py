@@ -2,8 +2,10 @@ from .audit import audit_local_data_assets
 from .first_batch import (
     audit_first_batch_sample_coverage,
     build_first_batch_sample_package,
+    build_default_add_on_price_limit_shortlist_malf_research_prep,
     build_shortlist_malf_research_prep,
     build_shortlist_sample_package,
+    default_add_on_price_limit_shortlist_sample_entries,
 )
 from .readers import (
     build_minimal_read_report,
@@ -27,8 +29,10 @@ __all__ = [
     "audit_local_data_assets",
     "audit_first_batch_sample_coverage",
     "build_first_batch_sample_package",
+    "build_default_add_on_price_limit_shortlist_malf_research_prep",
     "build_shortlist_malf_research_prep",
     "build_shortlist_sample_package",
+    "default_add_on_price_limit_shortlist_sample_entries",
     "build_minimal_institution_fact_package",
     "build_minimal_read_report",
     "inspect_duckdb_assets",

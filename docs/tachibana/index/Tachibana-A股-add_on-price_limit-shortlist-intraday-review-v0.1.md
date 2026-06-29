@@ -462,3 +462,63 @@ helper 输出里，对这两层会分别保留：
    - `pipeline_requires_ready_malf_snapshot`
 
 于是接下来我们就能把下一拍动作继续压小，而不需要重新回到“大而空地讨论要不要 front-filter”。
+
+### 9.4 现在已经有 canonical shortlist 入口
+
+为了让这 6 个样本不只停留在文档约定里，当前代码里已经把这份 shortlist 固化成了 canonical manifest + wrapper：
+
+- [first_batch.py](/Z:/asteria-trading-lab/src/data_sources/tdx_local/first_batch.py)
+  - `default_add_on_price_limit_shortlist_sample_entries()`
+  - `build_default_add_on_price_limit_shortlist_malf_research_prep(...)`
+
+这意味着下一拍不需要再手写 `sample_entries`，而是可以直接对这份固定 shortlist 跑 research prep。
+
+当前 canonical shortlist 仍然是：
+
+- core 4：`603538.SH / 603008.SH / 600310.SH / 603687.SH`
+- backup 2：`002663.SZ / 000899.SZ`
+
+### 9.5 真实数据根上的当前运行结果
+
+已在真实数据根上直接运行：
+
+```powershell
+$env:PYTHONPATH='src'
+python - <<'PY'
+from data_sources.tdx_local import build_default_add_on_price_limit_shortlist_malf_research_prep
+report = build_default_add_on_price_limit_shortlist_malf_research_prep(
+    tdx_root=r'Z:\new_tdx64',
+    offline_root=r'Z:\tdx_offline_Data',
+    duckdb_root=r'Z:\malf-data',
+)
+print(report['result'], report['sample_count'])
+PY
+```
+
+最小结果已经确认：
+
+- `result = pass`
+- `sample_count = 6`
+- `core_sample_count = 4`
+- `backup_sample_count = 2`
+- `blocked_formal_front_filter_count = 6`
+- `snapshot_pending_formal_front_filter_count = 0`
+
+并且 6 个样本全部落在同一个真实阻断上：
+
+- `formal_front_filter_status = blocked`
+- `formal_front_filter_issue = industry_membership_window_not_overlapping:<ts_code>`
+
+当前从真实 DuckDB 里读到的“现行业标签参考”也与前面的研究表一致，且其 `valid_from` 全都还是：
+
+- `2026-04-23`
+
+也就是说，当前阻断仍然不是 shortlist 选得不好，也不是 helper 行为不稳定，而是：
+
+- formal front-filter 的时间对齐行业标签，在这个真实窗口里仍然全部晚于事件窗口
+
+所以这层 canonical wrapper 现在真正提供的是：
+
+1. 一份固定、可复跑、不会漂移的 core 4 / backup 2 manifest
+2. 一次就能把 6 个样本全部打平到同一 research-prep 字段形状
+3. 一次就能验证“当前真实阻断依然全部是时间对齐行业标签缺口”

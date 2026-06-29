@@ -18,8 +18,10 @@ from ashare_intake_validator import (
 from data_sources.tdx_local import (
     audit_first_batch_sample_coverage,
     build_first_batch_sample_package,
+    build_default_add_on_price_limit_shortlist_malf_research_prep,
     build_shortlist_malf_research_prep,
     build_shortlist_sample_package,
+    default_add_on_price_limit_shortlist_sample_entries,
 )
 
 
@@ -42,6 +44,189 @@ def write_day_records(path: Path, records: list[tuple[int, int, int, int, int, f
 
 
 class TdxLocalFirstBatchTest(unittest.TestCase):
+    def test_default_add_on_price_limit_shortlist_sample_entries_keeps_core_four_and_backup_two_split(self) -> None:
+        entries = default_add_on_price_limit_shortlist_sample_entries()
+
+        self.assertEqual(len(entries), 6)
+        self.assertEqual(
+            [item["ts_code"] for item in entries],
+            [
+                "603538.SH",
+                "603008.SH",
+                "600310.SH",
+                "603687.SH",
+                "002663.SZ",
+                "000899.SZ",
+            ],
+        )
+        self.assertEqual(
+            [item["research_priority_group"] for item in entries],
+            ["core", "core", "core", "core", "backup", "backup"],
+        )
+        self.assertEqual(
+            [item["formal_review_bucket"] for item in entries],
+            [
+                "pressure_adjust_reopen",
+                "pressure_adjust_reopen",
+                "pressure_adjust_reopen",
+                "pressure_adjust_reopen",
+                "near_limit_compare",
+                "near_limit_compare",
+            ],
+        )
+
+    def test_build_default_add_on_price_limit_shortlist_malf_research_prep_materializes_canonical_shortlist(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            offline_root = root / "offline"
+            duckdb_root = root / "duckdb"
+            tdx_root = root / "tdx"
+            duckdb_root.mkdir()
+            (tdx_root / "vipdoc").mkdir(parents=True)
+
+            candidate_windows = {
+                ("sh", "603538"): [
+                    (20260324, 4000, 4050, 3980, 4030, 1000000.0, 100000),
+                    (20260325, 4030, 4100, 4020, 4080, 1100000.0, 110000),
+                    (20260326, 4080, 4180, 4060, 4160, 1200000.0, 120000),
+                    (20260330, 4160, 4210, 4050, 4070, 1300000.0, 130000),
+                    (20260401, 4070, 4172, 3681, 3985, 1400000.0, 140000),
+                    (20260403, 3985, 4020, 3900, 3950, 1500000.0, 150000),
+                ],
+                ("sh", "603008"): [
+                    (20260324, 1600, 1620, 1580, 1590, 1000000.0, 100000),
+                    (20260325, 1590, 1610, 1560, 1570, 1100000.0, 110000),
+                    (20260326, 1570, 1590, 1540, 1540, 1200000.0, 120000),
+                    (20260327, 1540, 1560, 1490, 1510, 1300000.0, 130000),
+                    (20260330, 1510, 1577, 1467, 1518, 1400000.0, 140000),
+                    (20260403, 1518, 1530, 1490, 1500, 1500000.0, 150000),
+                ],
+                ("sh", "600310"): [
+                    (20260324, 500, 560, 490, 550, 1000000.0, 100000),
+                    (20260325, 550, 610, 540, 600, 1100000.0, 110000),
+                    (20260326, 600, 650, 590, 640, 1200000.0, 120000),
+                    (20260327, 640, 660, 620, 660, 1300000.0, 130000),
+                    (20260330, 699, 726, 618, 632, 1400000.0, 140000),
+                    (20260403, 632, 640, 600, 615, 1500000.0, 150000),
+                ],
+                ("sh", "603687"): [
+                    (20260324, 1700, 1710, 1660, 1670, 1000000.0, 100000),
+                    (20260325, 1670, 1680, 1610, 1620, 1100000.0, 110000),
+                    (20260326, 1620, 1635, 1560, 1590, 1200000.0, 120000),
+                    (20260327, 1590, 1647, 1485, 1563, 1300000.0, 130000),
+                    (20260330, 1563, 1575, 1520, 1540, 1400000.0, 140000),
+                    (20260403, 1540, 1555, 1500, 1510, 1500000.0, 150000),
+                ],
+                ("sz", "002663"): [
+                    (20260330, 220, 225, 218, 224, 1000000.0, 100000),
+                    (20260331, 224, 232, 223, 230, 1100000.0, 110000),
+                    (20260401, 230, 244, 228, 238, 1200000.0, 120000),
+                    (20260402, 238, 240, 219, 219, 1300000.0, 130000),
+                    (20260403, 218, 220, 197, 201, 1400000.0, 140000),
+                ],
+                ("sz", "000899"): [
+                    (20260324, 1500, 1510, 1480, 1490, 1000000.0, 100000),
+                    (20260325, 1490, 1500, 1450, 1460, 1100000.0, 110000),
+                    (20260326, 1460, 1470, 1425, 1440, 1200000.0, 120000),
+                    (20260327, 1440, 1450, 1400, 1420, 1300000.0, 130000),
+                    (20260330, 1429, 1429, 1313, 1342, 1400000.0, 140000),
+                    (20260403, 1342, 1360, 1320, 1330, 1500000.0, 150000),
+                ],
+            }
+            for (market, code), rows in candidate_windows.items():
+                write_day_records(offline_root / "raw" / market / "lday" / f"{market}{code}.day", rows)
+
+            import duckdb
+
+            con = duckdb.connect(str(duckdb_root / "market_meta.duckdb"))
+            con.execute("create schema market_meta")
+            con.execute(
+                """
+                create table market_meta.market_meta.instrument_master (
+                    symbol varchar,
+                    asset_type varchar,
+                    exchange varchar,
+                    name varchar,
+                    list_dt date,
+                    delist_dt date,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.execute(
+                """
+                create table market_meta.market_meta.industry_block_relation (
+                    symbol varchar,
+                    asset_type varchar,
+                    relation_type varchar,
+                    relation_code varchar,
+                    relation_name varchar,
+                    effective_from date,
+                    effective_to date,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.executemany(
+                """
+                insert into market_meta.market_meta.instrument_master values (?, 'stock', ?, ?, '2020-01-01', null, 'run-1', 'v1', 'r1', 'hash-1')
+                """,
+                [
+                    ("sh603538", "SH", "Meinuohua"),
+                    ("sh603008", "SH", "Xilinmen"),
+                    ("sh600310", "SH", "Guangxi Energy"),
+                    ("sh603687", "SH", "Dashengda"),
+                    ("sz002663", "SZ", "Pubang Shares"),
+                    ("sz000899", "SZ", "Ganneng"),
+                ],
+            )
+            con.executemany(
+                """
+                insert into market_meta.market_meta.industry_block_relation values (?, 'stock', 'industry', ?, ?, '2026-04-23', null, 'run-1', 'v1', 'r1', 'hash-1')
+                """,
+                [
+                    ("sh603538", "T0101", "Pharma"),
+                    ("sh603008", "T0201", "Home"),
+                    ("sh600310", "T010201", "Hydropower"),
+                    ("sh603687", "T1102", "Packaging"),
+                    ("sz002663", "T110101", "Construction"),
+                    ("sz000899", "T010202", "Thermal Power"),
+                ],
+            )
+            con.close()
+
+            report = build_default_add_on_price_limit_shortlist_malf_research_prep(
+                tdx_root=tdx_root,
+                offline_root=offline_root,
+                duckdb_root=duckdb_root,
+                generated_at="2026-06-29T23:00:00+08:00",
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["research_shortlist_id"], "add_on_price_limit_shortlist_v0.1")
+        self.assertEqual(report["research_shortlist_scope"], "add_on_pullback_add_price_limit")
+        self.assertTrue(report["research_only"])
+        self.assertEqual(report["sample_count"], 6)
+        self.assertEqual(report["core_sample_count"], 4)
+        self.assertEqual(report["backup_sample_count"], 2)
+        self.assertEqual(report["blocked_formal_front_filter_count"], 6)
+        self.assertEqual(report["snapshot_pending_formal_front_filter_count"], 0)
+
+        by_code = {item["ts_code"]: item for item in report["samples"]}
+        self.assertEqual(by_code["600310.SH"]["research_priority_group"], "core")
+        self.assertEqual(by_code["002663.SZ"]["research_priority_group"], "backup")
+        self.assertEqual(by_code["600310.SH"]["formal_review_bucket"], "pressure_adjust_reopen")
+        self.assertEqual(by_code["000899.SZ"]["formal_review_bucket"], "near_limit_compare")
+        self.assertEqual(by_code["603687.SH"]["trade_date"], "2026-03-27")
+        self.assertEqual(by_code["603538.SH"]["industry_window_status"], "not_overlapping")
+        self.assertEqual(by_code["000899.SZ"]["next_action"], "action:hold_for_industry_time_alignment")
+
     def test_build_shortlist_malf_research_prep_keeps_non_overlapping_samples_in_research_only_flow(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
