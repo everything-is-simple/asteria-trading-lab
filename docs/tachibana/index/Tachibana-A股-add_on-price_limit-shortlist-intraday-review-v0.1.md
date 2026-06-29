@@ -522,3 +522,39 @@ PY
 1. 一份固定、可复跑、不会漂移的 core 4 / backup 2 manifest
 2. 一次就能把 6 个样本全部打平到同一 research-prep 字段形状
 3. 一次就能验证“当前真实阻断依然全部是时间对齐行业标签缺口”
+
+### 9.6 core 4 现在已经可以 materialize 成 research-only bundle
+
+在 canonical shortlist wrapper 之外，当前代码还进一步补上了一个 research-only materializer：
+
+- [first_batch.py](/Z:/asteria-trading-lab/src/data_sources/tdx_local/first_batch.py)
+  - `materialize_default_add_on_price_limit_core_malf_research_bundle(...)`
+
+它做的不是正式 `ashare/` 接入包，而是把这次最需要继续手工推进的 core 4，落成一个单独的 research bundle：
+
+```text
+<data_root>/research/add_on-price-limit-shortlist-v0.1/
+  core-malf-snapshot-prep-manifest-v0.1.json
+  near-limit-compare-manifest-v0.1.json
+  front-filter-research-prep-v0.1.json
+  daily-window-v0.1/
+    603538.SH.csv
+    603008.SH.csv
+    600310.SH.csv
+    603687.SH.csv
+  malf-snapshot-stubs-v0.1/
+    603538.SH-2026-03.json
+    603008.SH-2026-03.json
+    600310.SH-2026-03.json
+    603687.SH-2026-03.json
+```
+
+这里最关键的边界是：
+
+- 只 materialize **core 4** 的最小日线窗口和 snapshot stub
+- `002663 / 000899` 仍只保留在 `near-limit-compare-manifest-v0.1.json` 里，作为 backup compare control
+- snapshot 仍然是 `snapshot_quality_status = source_missing`
+- `research_prep_status = stub_pending_manual_malf_fill`
+- 依然不宣称 formal front-filter ready
+
+这意味着我们现在已经不只是“知道该准备哪 4 个样本”，而是已经把这 4 个样本的下一拍手工补快照入口，固定成一份可以直接继续施工的 research bundle。

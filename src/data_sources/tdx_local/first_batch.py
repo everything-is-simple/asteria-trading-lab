@@ -521,6 +521,166 @@ def build_default_add_on_price_limit_shortlist_malf_research_prep(
     return _strip_forbidden_fields(report)
 
 
+def materialize_default_add_on_price_limit_core_malf_research_bundle(
+    data_root: str | Path,
+    tdx_root: str | Path,
+    offline_root: str | Path,
+    duckdb_root: str | Path,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    root = Path(data_root)
+    generated_at_value = generated_at or datetime.now().astimezone().isoformat(timespec="seconds")
+    report = build_default_add_on_price_limit_shortlist_malf_research_prep(
+        tdx_root=tdx_root,
+        offline_root=offline_root,
+        duckdb_root=duckdb_root,
+        generated_at=generated_at_value,
+    )
+    if report.get("result") != "pass":
+        return _strip_forbidden_fields(dict(report))
+
+    bundle_root = root / "research" / "add_on-price-limit-shortlist-v0.1"
+    daily_root = bundle_root / "daily-window-v0.1"
+    stub_root = bundle_root / "malf-snapshot-stubs-v0.1"
+    sample_manifest = default_add_on_price_limit_shortlist_sample_entries()
+    sample_entry_index = {str(item.get("ts_code", "")): item for item in sample_manifest if item.get("ts_code")}
+
+    core_samples = [item for item in report.get("samples", []) if item.get("research_priority_group") == "core"]
+    backup_samples = [item for item in report.get("samples", []) if item.get("research_priority_group") == "backup"]
+
+    materialized_core_samples: list[dict[str, Any]] = []
+    materialized_backup_samples: list[dict[str, Any]] = []
+
+    for sample in core_samples:
+        ts_code = str(sample.get("ts_code", ""))
+        entry = sample_entry_index.get(ts_code)
+        if entry is None:
+            continue
+        daily_rows = _window_rows(read_daily_bars(offline_root, ts_code), entry)
+        if not daily_rows:
+            continue
+
+        daily_file = daily_root / f"{ts_code}.csv"
+        _write_csv(daily_file, DAILY_HEADER, [_daily_row(ts_code, row) for row in daily_rows])
+
+        snapshot_stub = dict(sample.get("snapshot_stub", {}))
+        snapshot_stub["source_daily_file"] = f"daily-window-v0.1/{ts_code}.csv"
+        snapshot_stub["research_prep_status"] = "stub_pending_manual_malf_fill"
+        snapshot_file_rel = f"malf-snapshot-stubs-v0.1/{ts_code}-{str(snapshot_stub.get('window_start', 'UNKNOWN'))[0:7]}.json"
+        stub_file = stub_root / f"{ts_code}-{str(snapshot_stub.get('window_start', 'UNKNOWN'))[0:7]}.json"
+        stub_file.parent.mkdir(parents=True, exist_ok=True)
+        stub_file.write_text(json.dumps(snapshot_stub, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+        materialized_front_filter_command = _front_filter_command(
+            f"research/add_on-price-limit-shortlist-v0.1/{snapshot_file_rel}"
+        )
+        materialized_record_draft_command = _record_draft_command(
+            f"research/add_on-price-limit-shortlist-v0.1/{snapshot_file_rel}",
+            str(sample.get("symbol_name", "UNKNOWN")),
+            str(sample.get("ashare_sample_id_suggestion", "")),
+        )
+        materialized_core_samples.append(
+            _strip_forbidden_fields(
+                {
+                    **sample,
+                    "snapshot_stub": snapshot_stub,
+                    "materialized_daily_window_file": f"research/add_on-price-limit-shortlist-v0.1/daily-window-v0.1/{ts_code}.csv",
+                    "materialized_snapshot_stub_file": f"research/add_on-price-limit-shortlist-v0.1/{snapshot_file_rel}",
+                    "materialized_front_filter_command": materialized_front_filter_command,
+                    "materialized_record_draft_command": materialized_record_draft_command,
+                }
+            )
+        )
+
+    for sample in backup_samples:
+        materialized_backup_samples.append(
+            _strip_forbidden_fields(
+                {
+                    **sample,
+                    "compare_role": "near_limit_backup_control",
+                    "materialized_daily_window_file": None,
+                    "materialized_snapshot_stub_file": None,
+                    "materialized_front_filter_command": None,
+                    "materialized_record_draft_command": None,
+                }
+            )
+        )
+
+    core_manifest = _strip_forbidden_fields(
+        {
+            "research_only": True,
+            "research_shortlist_id": report.get("research_shortlist_id"),
+            "research_shortlist_scope": report.get("research_shortlist_scope"),
+            "bundle_role": "core_malf_snapshot_prep",
+            "generated_at": generated_at_value,
+            "sample_count": len(materialized_core_samples),
+            "samples": materialized_core_samples,
+        }
+    )
+    backup_manifest = _strip_forbidden_fields(
+        {
+            "research_only": True,
+            "research_shortlist_id": report.get("research_shortlist_id"),
+            "research_shortlist_scope": report.get("research_shortlist_scope"),
+            "bundle_role": "near_limit_compare_backup",
+            "generated_at": generated_at_value,
+            "sample_count": len(materialized_backup_samples),
+            "samples": materialized_backup_samples,
+        }
+    )
+    front_filter_prep = _strip_forbidden_fields(
+        {
+            **dict(report),
+            "samples": materialized_core_samples,
+            "core_sample_count": len(materialized_core_samples),
+            "backup_sample_count": len(materialized_backup_samples),
+            "blocked_formal_front_filter_count": sum(
+                1 for item in materialized_core_samples if item.get("formal_front_filter_status") == "blocked"
+            ),
+            "snapshot_pending_formal_front_filter_count": sum(
+                1 for item in materialized_core_samples if item.get("formal_front_filter_status") == "snapshot_pending"
+            ),
+        }
+    )
+
+    bundle_root.mkdir(parents=True, exist_ok=True)
+    (bundle_root / "core-malf-snapshot-prep-manifest-v0.1.json").write_text(
+        json.dumps(core_manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (bundle_root / "near-limit-compare-manifest-v0.1.json").write_text(
+        json.dumps(backup_manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (bundle_root / "front-filter-research-prep-v0.1.json").write_text(
+        json.dumps(front_filter_prep, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    return _strip_forbidden_fields(
+        {
+            "result": "pass",
+            "generated_at": generated_at_value,
+            "research_only": True,
+            "research_bundle_root": "research/add_on-price-limit-shortlist-v0.1",
+            "research_shortlist_id": report.get("research_shortlist_id"),
+            "research_shortlist_scope": report.get("research_shortlist_scope"),
+            "core_sample_count": len(materialized_core_samples),
+            "backup_sample_count": len(materialized_backup_samples),
+            "core_daily_window_count": len(materialized_core_samples),
+            "core_snapshot_stub_count": len(materialized_core_samples),
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "core_manifest_file": "research/add_on-price-limit-shortlist-v0.1/core-malf-snapshot-prep-manifest-v0.1.json",
+            "backup_manifest_file": "research/add_on-price-limit-shortlist-v0.1/near-limit-compare-manifest-v0.1.json",
+            "front_filter_prep_file": "research/add_on-price-limit-shortlist-v0.1/front-filter-research-prep-v0.1.json",
+            "next_action": "action:fill_core_malf_snapshot_stubs",
+        }
+    )
+
+
 def audit_first_batch_sample_coverage(data_root: str | Path) -> dict[str, Any]:
     root = Path(data_root)
     manifest_entries = _load_manifest_entries(root)

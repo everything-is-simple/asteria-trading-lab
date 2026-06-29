@@ -6,6 +6,7 @@ from .first_batch import (
     build_shortlist_malf_research_prep,
     build_shortlist_sample_package,
     default_add_on_price_limit_shortlist_sample_entries,
+    materialize_default_add_on_price_limit_core_malf_research_bundle,
 )
 from .readers import (
     build_minimal_read_report,
@@ -33,6 +34,7 @@ __all__ = [
     "build_shortlist_malf_research_prep",
     "build_shortlist_sample_package",
     "default_add_on_price_limit_shortlist_sample_entries",
+    "materialize_default_add_on_price_limit_core_malf_research_bundle",
     "build_minimal_institution_fact_package",
     "build_minimal_read_report",
     "inspect_duckdb_assets",
