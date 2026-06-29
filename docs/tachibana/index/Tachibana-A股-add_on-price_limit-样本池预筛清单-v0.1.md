@@ -97,6 +97,32 @@
 - 这个近板候选在当前真实数据里，是否具备窗口内可重叠行业标签
 - 因而是否有资格继续进正式 `structure_candidate -> front_filter` 复核
 
+### 2.6 新增 intraday 最小复核字段
+
+本轮进一步把候选池与 research-only `lc5` 读取接起来后，又新增了一组只用于研究复核的派生字段：
+
+- `intraday_nearest_limit_side`
+- `intraday_nearest_limit_gap_pct`
+- `intraday_close_gap_pct`
+- `intraday_limit_reopen_status`
+
+其中最关键的是：
+
+- `closed_at_limit_after_touch`
+- `reopened_after_limit_touch`
+- `near_limit_without_touch`
+
+它们不是新的规则字段，也不替代 `price_limit_event_limit_proximity`；
+只是在样本池层面继续回答一个更细的问题：
+
+- **候选日是“触边后继续封死”，还是“触边后又打开”，还是“极贴边但没真的触板”。**
+
+这组区分对后续 `Q-PRESSURE-ADJUST / pullback_add / add_on` 研究很重要，因为：
+
+- “触边后打开”通常更像边界挤压下的压力调整
+- “触边后继续封死”则更接近极端情绪或失败下杀
+- “近板未触板”更适合承接 `near_limit` 的稳定比较面
+
 ## 3. 当前预筛结果总览
 
 对真实窗口 `2026-03-24` 至 `2026-04-03` 跑预筛后，得到：
@@ -176,6 +202,123 @@
 - `at_limit`
 
 三者是否真能在多样本上形成稳定可比面。
+
+但如果我们把目标再收窄一点，不只是找“更贴板”，而是找“更像 `Q-PRESSURE-ADJUST / pullback_add / add_on` 邻近样本”，那候选池里还应该额外保留一层第二梯队：
+
+1. `603538.SH / 美诺华 / 2026-04-01`
+2. `603008.SH / 喜临门 / 2026-03-30`
+3. `603687.SH / 大胜达 / 2026-03-27`
+4. `600815.SH / 厦工股份 / 2026-03-26`
+5. `002560.SZ / 通达股份 / 2026-04-03`
+6. `603628.SH / 清源股份 / 2026-03-30`
+
+这批样本的共同点是：
+
+- 盘中已经到边或极贴边
+- 但收盘并没有继续封死在同一侧边界
+- `close_return_pct` 也相对没那么极端
+
+因此它们比“直接封死跌停的极值样本”更适合承担一个研究任务：
+
+- 继续测试 `near_limit / at_limit` 是否真的在 `add_on` 语义上更接近“压力调整中的边界挤压”
+
+而不是简单等价于：
+
+- 普通失败下杀
+
+所以现在的更准确推进面应该是两层而不是一层：
+
+1. **第一梯队**：最贴边、最容易提供 `near_limit / at_limit` 明确信号的样本
+2. **第二梯队**：更像 `pressure_adjust / pullback_add` 的边界挤压样本
+
+如果继续用这轮新增的可复跑 shortlist 口径，只保留：
+
+- `intraday_limit_reopen_status in {reopened_after_limit_touch, near_limit_without_touch}`
+- `abs(close_return_pct) <= 8.5`
+- 再按 `intraday_nearest_limit_gap_pct -> abs(close_return_pct) -> runup_pct` 排序
+
+那么当前真实窗口里，前 `10` 个更像 `Q-PRESSURE-ADJUST / pullback_add` 的候选是：
+
+| rank | ts_code | 名称 | trade_date | intraday_limit_reopen_status | intraday_nearest_limit_gap_pct | intraday_close_gap_pct | runup_pct | close_return_pct |
+|---:|---|---|---|---|---:|---:|---:|---:|
+| 1 | `603538.SH` | `美诺华` | `2026-04-01` | `reopened_after_limit_touch` | `0.00` | `8.10` | `60.90` | `-2.71` |
+| 2 | `603008.SH` | `喜临门` | `2026-03-30` | `reopened_after_limit_touch` | `0.00` | `7.16` | `32.48` | `-3.56` |
+| 3 | `600310.SH` | `广西能源` | `2026-03-30` | `reopened_after_limit_touch` | `0.00` | `12.95` | `51.38` | `-4.24` |
+| 4 | `603687.SH` | `大胜达` | `2026-03-27` | `reopened_after_limit_touch` | `0.00` | `5.25` | `35.58` | `-5.27` |
+| 5 | `605162.SH` | `新中港` | `2026-03-30` | `reopened_after_limit_touch` | `0.00` | `4.66` | `17.59` | `-5.80` |
+| 6 | `000601.SZ` | `韶能股份` | `2026-03-30` | `reopened_after_limit_touch` | `0.00` | `4.56` | `22.78` | `-5.90` |
+| 7 | `002800.SZ` | `天顺股份` | `2026-04-01` | `reopened_after_limit_touch` | `0.00` | `2.87` | `18.83` | `-7.42` |
+| 8 | `002310.SZ` | `东方新能` | `2026-03-26` | `reopened_after_limit_touch` | `0.00` | `2.05` | `46.76` | `-8.16` |
+| 9 | `603693.SH` | `江苏新能` | `2026-03-26` | `reopened_after_limit_touch` | `0.01` | `3.95` | `29.01` | `-6.45` |
+| 10 | `600703.SH` | `三安光电` | `2026-03-24` | `reopened_after_limit_touch` | `0.01` | `3.35` | `22.23` | `-6.98` |
+
+这张表的重要性在于：
+
+- 它第一次把“更贴板”与“更像压力调整”合并成了一个可复跑排序口径
+- 它不再只靠人工主观挑 6 只，而是已经能稳定产出一组研究优先级
+- 它也让 `600310.SH` 这种 `up_limit_side` 稀缺样本，不会被纯跌停极值淹没
+
+如果再往下走一步，把“正式进入下一拍 review”的样本面继续缩成可执行的 `4~6` 个，那么当前最合适的组合是：
+
+1. `603538.SH / 美诺华 / 2026-04-01`
+2. `603008.SH / 喜临门 / 2026-03-30`
+3. `600310.SH / 广西能源 / 2026-03-30`
+4. `603687.SH / 大胜达 / 2026-03-27`
+5. `002663.SZ / 普邦股份 / 2026-04-03`
+6. `000899.SZ / 赣能股份 / 2026-03-30`
+
+这个 6 样本组合不是简单取前 6 名，而是有意保留了两层比较面：
+
+- `603538 / 603008 / 600310 / 603687`：盘中触边后又打开，更像 `pressure_adjust_reopen`
+- `002663 / 000899`：极贴边但未触板，更像 `near_limit_compare`
+
+也就是说，下一拍我们不再只是问：
+
+- “有没有近板样本”
+
+而是已经可以更具体地问：
+
+- “像 `pressure_adjust` 的 reopened 触边样本，和极贴边未触板样本，在 `add_on` 研究语义上到底有没有稳定差别”
+
+如果再把这 6 个样本继续压成下一拍最顺的核心复核对象，那么当前更自然的核心 4 样本是：
+
+1. `603538.SH / 美诺华 / 2026-04-01`
+2. `603008.SH / 喜临门 / 2026-03-30`
+3. `600310.SH / 广西能源 / 2026-03-30`
+4. `603687.SH / 大胜达 / 2026-03-27`
+
+这一步不是随手再删掉 2 个，而是基于一个更窄的 research-prep 口径：
+
+- 优先保留 `formal_review_bucket = pressure_adjust_reopen`
+- 先把 reopened touch 的 `pressure_adjust` 面单独看清
+- `near_limit_compare` 先留作备份对照，而不和核心复核面混在第一拍
+
+这 4 个样本共同满足：
+
+- 事件日整日 `lc5` 已证明盘中触边
+- `intraday_limit_reopen_status = reopened_after_limit_touch`
+- 收盘都明显离开同侧边界
+- 回撤幅度仍停在“像调整”而不是“最极端封死”的区间
+
+其中：
+
+- `603538.SH` 是当前最强的高位受压后打开样本
+- `603008.SH` 提供更干净的下边界 reopened 对照
+- `600310.SH` 保留了最稀缺的 `up_limit_side` reopened 对照
+- `603687.SH` 则把 reopened 面从“前两名个例”扩到更稳定的第 4 个样本
+
+因此对下一拍来说，更准确的分工已经可以写成：
+
+- **核心 4 样本**：`603538 / 603008 / 600310 / 603687`
+- **备份 2 样本**：`002663 / 000899`
+
+也就是先回答：
+
+- `pressure_adjust_reopen` 是否值得进入 MALF snapshot / front-filter research prep
+
+再用 `near_limit_compare` 去补：
+
+- reopened touch 和极贴边未触板之间，到底有没有结构语义差异
 
 但本轮继续往正式结构复核推进时，也暴露了一个新的真实阻断：
 
@@ -285,6 +428,18 @@
 
 - [Tachibana-A股-add_on-price_limit-shortlist-intraday-review-v0.1.md](./Tachibana-A股-add_on-price_limit-shortlist-intraday-review-v0.1.md)
 
+此外，本轮还补了一个可复跑的 research-only `lc5` 读取能力：
+
+- [readers.py](/Z:/asteria-trading-lab/src/data_sources/tdx_local/readers.py) 中新增 `read_intraday_range()`
+
+它的职责仅限于：
+
+- 读取指定 `ts_code / trade_date` 的整日 `lc5` 范围
+- 输出 `intraday_open / intraday_high / intraday_low / intraday_close / bar_count`
+- 继续保持 `formal_data_write_allowed = false`
+
+这意味着后续第二梯队样本的整日 intraday 复核，已经不必继续依赖一次性的手工抄表，而是能沿用同一条 research-only 读取路径。
+
 ## 7. 当前结论
 
 本轮最重要的推进有三点：
@@ -292,6 +447,26 @@
 1. 我们已经不再只有 `300750.SZ / not_near_limit` 这一条单点样本
 2. 我们已经拿到一批真实市场里的 `near_limit / at_limit` 预筛候选，并且有了可重跑的只读筛法
 3. shortlist 中至少 6 个样本已经补到事件日整日 `lc5` 证据，足以支撑更正式的最小 review
+
+进一步把候选池前 `80` 个样本接上整日 `lc5` 最小复核后，又得到一个新的分布：
+
+- `at_limit_candidate + reopened_after_limit_touch`：`44`
+- `at_limit_candidate + closed_at_limit_after_touch`：`30`
+- `near_limit_candidate + near_limit_without_touch`：`6`
+
+这个分布很有价值，因为它说明：
+
+- 当前候选池里的 `at_limit_candidate` 并不等于“几乎全是封死板极值”
+- 相反，**触边后又打开** 的样本反而更多
+- 这正好给 `pressure_adjust / pullback_add` 研究提供了更自然的继续筛选面
+
+换句话说，我们现在已经不只是能说：
+
+- “这里有 near_limit / at_limit 候选”
+
+还能继续往下说：
+
+- “这些 `at_limit` 候选里，哪些更像盘中受边界约束后的调整，哪些更像继续封死的极端状态”
 
 但同时要明确：
 

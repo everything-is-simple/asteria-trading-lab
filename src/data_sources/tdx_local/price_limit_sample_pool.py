@@ -5,7 +5,7 @@ from typing import Any
 
 import duckdb
 
-from .readers import _normalize_duckdb_symbol
+from .readers import _normalize_duckdb_symbol, read_intraday_range
 
 
 FORBIDDEN_OUTPUT_FIELDS = {
@@ -202,6 +202,156 @@ def screen_pullback_add_price_limit_candidates(
     return [_normalize_candidate_row(row) for row in rows]
 
 
+def screen_pullback_add_price_limit_candidates_with_intraday(
+    duckdb_root: str | Path,
+    tdx_root: str | Path,
+    window_start: str,
+    window_end: str,
+    limit: int = 50,
+    require_industry_window_overlap: bool = False,
+) -> list[dict[str, Any]]:
+    rows = screen_pullback_add_price_limit_candidates(
+        duckdb_root=duckdb_root,
+        window_start=window_start,
+        window_end=window_end,
+        limit=limit,
+        require_industry_window_overlap=require_industry_window_overlap,
+    )
+    return [_attach_intraday_review_fields(Path(tdx_root), row) for row in rows]
+
+
+def shortlist_pullback_add_pressure_adjust_candidates(
+    rows: list[dict[str, Any]],
+    limit: int = 10,
+    max_close_drop_pct: float = 8.5,
+) -> list[dict[str, Any]]:
+    selected: list[dict[str, Any]] = []
+    for row in rows:
+        if row.get("intraday_review_result") != "source_review_required":
+            continue
+        reopen_status = row.get("intraday_limit_reopen_status")
+        if reopen_status not in {"reopened_after_limit_touch", "near_limit_without_touch"}:
+            continue
+        close_return_pct = row.get("close_return_pct")
+        intraday_gap_pct = row.get("intraday_nearest_limit_gap_pct")
+        if not isinstance(close_return_pct, (int, float)) or not isinstance(intraday_gap_pct, (int, float)):
+            continue
+        if abs(float(close_return_pct)) > max_close_drop_pct:
+            continue
+        enriched = dict(row)
+        enriched["pressure_adjust_alignment"] = "higher_priority"
+        selected.append(enriched)
+    selected.sort(
+        key=lambda item: (
+            float(item["intraday_nearest_limit_gap_pct"]),
+            abs(float(item["close_return_pct"])),
+            -float(item["runup_pct"]),
+            str(item["ts_code"]),
+        )
+    )
+    for index, row in enumerate(selected[:limit], 1):
+        row["pressure_adjust_priority_rank"] = index
+    return selected[:limit]
+
+
+def shortlist_formal_pressure_adjust_review_candidates(
+    rows: list[dict[str, Any]],
+    reopened_limit: int = 4,
+    near_limit: int = 2,
+    max_close_drop_pct: float = 8.5,
+) -> list[dict[str, Any]]:
+    reopened_rows = shortlist_pullback_add_pressure_adjust_candidates(
+        rows,
+        limit=reopened_limit,
+        max_close_drop_pct=max_close_drop_pct,
+    )
+    formal_rows: list[dict[str, Any]] = []
+    seen_ts_codes: set[str] = set()
+    for row in reopened_rows:
+        enriched = dict(row)
+        enriched["formal_review_bucket"] = "pressure_adjust_reopen"
+        formal_rows.append(enriched)
+        seen_ts_codes.add(str(row["ts_code"]))
+
+    near_rows: list[dict[str, Any]] = []
+    for row in rows:
+        if str(row.get("ts_code")) in seen_ts_codes:
+            continue
+        if row.get("intraday_review_result") != "source_review_required":
+            continue
+        if row.get("proximity_bucket") != "near_limit_candidate":
+            continue
+        if row.get("intraday_limit_reopen_status") != "near_limit_without_touch":
+            continue
+        close_return_pct = row.get("close_return_pct")
+        intraday_gap_pct = row.get("intraday_nearest_limit_gap_pct")
+        if not isinstance(close_return_pct, (int, float)) or not isinstance(intraday_gap_pct, (int, float)):
+            continue
+        if abs(float(close_return_pct)) > max_close_drop_pct:
+            continue
+        enriched = dict(row)
+        enriched["formal_review_bucket"] = "near_limit_compare"
+        near_rows.append(enriched)
+    near_rows.sort(
+        key=lambda item: (
+            float(item["intraday_nearest_limit_gap_pct"]),
+            abs(float(item["close_return_pct"])),
+            -float(item["runup_pct"]),
+            str(item["ts_code"]),
+        )
+    )
+    formal_rows.extend(near_rows[:near_limit])
+    for index, row in enumerate(formal_rows, 1):
+        row["formal_review_priority_rank"] = index
+    return formal_rows
+
+
+def shortlist_core_malf_snapshot_candidates(
+    rows: list[dict[str, Any]],
+    limit: int = 4,
+) -> list[dict[str, Any]]:
+    formal_rows = sorted(
+        rows,
+        key=lambda item: int(item.get("formal_review_priority_rank", 9999)),
+    )
+
+    selected: list[dict[str, Any]] = []
+    seen_ts_codes: set[str] = set()
+
+    for row in formal_rows:
+        if len(selected) >= limit:
+            break
+        if row.get("formal_review_bucket") != "pressure_adjust_reopen":
+            continue
+        ts_code = str(row.get("ts_code"))
+        if ts_code in seen_ts_codes:
+            continue
+        enriched = dict(row)
+        enriched["core_review_bucket"] = "malf_snapshot_priority"
+        enriched["core_snapshot_focus"] = "pressure_adjust_reopen_core"
+        selected.append(enriched)
+        seen_ts_codes.add(ts_code)
+
+    if len(selected) < limit:
+        for row in formal_rows:
+            if len(selected) >= limit:
+                break
+            if row.get("formal_review_bucket") != "near_limit_compare":
+                continue
+            ts_code = str(row.get("ts_code"))
+            if ts_code in seen_ts_codes:
+                continue
+            enriched = dict(row)
+            enriched["core_review_bucket"] = "malf_snapshot_priority"
+            enriched["core_snapshot_focus"] = "near_limit_compare_backup"
+            selected.append(enriched)
+            seen_ts_codes.add(ts_code)
+
+    for index, row in enumerate(selected, 1):
+        row["core_review_priority_rank"] = index
+    return selected
+
+
 def _normalize_candidate_row(row: tuple[Any, ...]) -> dict[str, Any]:
     (
         symbol,
@@ -257,6 +407,62 @@ def _normalize_candidate_row(row: tuple[Any, ...]) -> dict[str, Any]:
             "proximity_bucket": proximity_bucket,
         }
     )
+
+
+def _attach_intraday_review_fields(tdx_root: Path, row: dict[str, Any]) -> dict[str, Any]:
+    report = read_intraday_range(tdx_root, str(row["ts_code"]), str(row["trade_date"]))
+    enriched = dict(row)
+    enriched["intraday_review_result"] = report.get("result")
+    enriched["intraday_review_reason"] = report.get("reason")
+    intraday_range = report.get("intraday_range")
+    if not isinstance(intraday_range, dict):
+        enriched["intraday_bar_count"] = None
+        enriched["intraday_open"] = None
+        enriched["intraday_high"] = None
+        enriched["intraday_low"] = None
+        enriched["intraday_close"] = None
+        enriched["intraday_nearest_limit_side"] = None
+        enriched["intraday_nearest_limit_gap_pct"] = None
+        enriched["intraday_close_gap_pct"] = None
+        enriched["intraday_limit_reopen_status"] = None
+        enriched["intraday_source_ref"] = None
+        return _strip_forbidden_fields(enriched)
+
+    intraday_high = float(intraday_range["intraday_high"])
+    intraday_low = float(intraday_range["intraday_low"])
+    intraday_close = float(intraday_range["intraday_close"])
+    limit_up_price = float(row["limit_up_price"])
+    limit_down_price = float(row["limit_down_price"])
+
+    gap_to_up_limit_pct = abs(intraday_high - limit_up_price) / limit_up_price * 100.0
+    gap_to_down_limit_pct = abs(intraday_low - limit_down_price) / limit_down_price * 100.0
+    intraday_nearest_limit_side = "up_limit_side" if gap_to_up_limit_pct <= gap_to_down_limit_pct else "down_limit_side"
+    intraday_nearest_limit_gap_pct = min(gap_to_up_limit_pct, gap_to_down_limit_pct)
+
+    if intraday_nearest_limit_side == "up_limit_side":
+        intraday_close_gap_pct = abs(intraday_close - limit_up_price) / limit_up_price * 100.0
+    else:
+        intraday_close_gap_pct = abs(intraday_close - limit_down_price) / limit_down_price * 100.0
+
+    touched_limit = intraday_nearest_limit_gap_pct <= 0.05
+    if touched_limit and intraday_close_gap_pct > 0.05:
+        intraday_limit_reopen_status = "reopened_after_limit_touch"
+    elif touched_limit:
+        intraday_limit_reopen_status = "closed_at_limit_after_touch"
+    else:
+        intraday_limit_reopen_status = "near_limit_without_touch"
+
+    enriched["intraday_bar_count"] = int(intraday_range["bar_count"])
+    enriched["intraday_open"] = round(float(intraday_range["intraday_open"]), 4)
+    enriched["intraday_high"] = round(intraday_high, 4)
+    enriched["intraday_low"] = round(intraday_low, 4)
+    enriched["intraday_close"] = round(intraday_close, 4)
+    enriched["intraday_nearest_limit_side"] = intraday_nearest_limit_side
+    enriched["intraday_nearest_limit_gap_pct"] = round(intraday_nearest_limit_gap_pct, 2)
+    enriched["intraday_close_gap_pct"] = round(intraday_close_gap_pct, 2)
+    enriched["intraday_limit_reopen_status"] = intraday_limit_reopen_status
+    enriched["intraday_source_ref"] = intraday_range.get("source_ref")
+    return _strip_forbidden_fields(enriched)
 
 
 def _strip_forbidden_fields(value: Any) -> Any:

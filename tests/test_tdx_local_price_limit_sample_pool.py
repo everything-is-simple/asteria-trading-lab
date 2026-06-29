@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import duckdb
 
@@ -12,6 +13,10 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from data_sources.tdx_local.price_limit_sample_pool import (
     screen_pullback_add_price_limit_candidates,
+    screen_pullback_add_price_limit_candidates_with_intraday,
+    shortlist_core_malf_snapshot_candidates,
+    shortlist_formal_pressure_adjust_review_candidates,
+    shortlist_pullback_add_pressure_adjust_candidates,
 )
 
 
@@ -258,6 +263,440 @@ class PriceLimitSamplePoolTest(unittest.TestCase):
 
         self.assertEqual([row["ts_code"] for row in rows], ["000001.SZ"])
         self.assertTrue(rows[0]["industry_window_overlap"])
+
+    def test_screen_pullback_add_price_limit_candidates_with_intraday_merges_review_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            duckdb_root = root / "duckdb"
+            duckdb_root.mkdir()
+            _create_market_meta_db(duckdb_root / "market_meta.duckdb")
+            _create_market_base_day_db(duckdb_root / "market_base_day.duckdb")
+
+            intraday_reports = {
+                ("300123.SZ", "2026-03-31"): {
+                    "result": "source_review_required",
+                    "selected_source": "tdx_lc5_intraday_range",
+                    "trade_date": "2026-03-31",
+                    "intraday_range": {
+                        "ts_code": "300123.SZ",
+                        "trade_date": "2026-03-31",
+                        "bar_count": 48,
+                        "intraday_open": 18.0,
+                        "intraday_high": 18.5,
+                        "intraday_low": 16.0,
+                        "intraday_close": 16.4,
+                        "source_ref": "fixture:sz300123.lc5",
+                    },
+                    "formal_data_write_allowed": False,
+                },
+                ("000001.SZ", "2026-03-27"): {
+                    "result": "source_review_required",
+                    "selected_source": "tdx_lc5_intraday_range",
+                    "trade_date": "2026-03-27",
+                    "intraday_range": {
+                        "ts_code": "000001.SZ",
+                        "trade_date": "2026-03-27",
+                        "bar_count": 48,
+                        "intraday_open": 10.9,
+                        "intraday_high": 11.0,
+                        "intraday_low": 10.3,
+                        "intraday_close": 10.8,
+                        "source_ref": "fixture:sz000001.lc5",
+                    },
+                    "formal_data_write_allowed": False,
+                },
+            }
+
+            def fake_read_intraday_range(tdx_root: Path, ts_code: str, trade_date: str) -> dict[str, object]:
+                return intraday_reports[(ts_code, trade_date)]
+
+            with patch(
+                "data_sources.tdx_local.price_limit_sample_pool.read_intraday_range",
+                side_effect=fake_read_intraday_range,
+            ):
+                rows = screen_pullback_add_price_limit_candidates_with_intraday(
+                    duckdb_root=duckdb_root,
+                    tdx_root=root / "tdx",
+                    window_start="2026-03-24",
+                    window_end="2026-03-31",
+                )
+
+        by_code = {row["ts_code"]: row for row in rows}
+        self.assertEqual(by_code["300123.SZ"]["intraday_review_result"], "source_review_required")
+        self.assertEqual(by_code["300123.SZ"]["intraday_bar_count"], 48)
+        self.assertEqual(by_code["300123.SZ"]["intraday_nearest_limit_side"], "down_limit_side")
+        self.assertEqual(by_code["300123.SZ"]["intraday_nearest_limit_gap_pct"], 0.0)
+        self.assertEqual(by_code["300123.SZ"]["intraday_limit_reopen_status"], "reopened_after_limit_touch")
+        self.assertEqual(by_code["300123.SZ"]["intraday_close_gap_pct"], 2.5)
+        self.assertEqual(by_code["000001.SZ"]["intraday_nearest_limit_side"], "down_limit_side")
+        self.assertEqual(by_code["000001.SZ"]["intraday_nearest_limit_gap_pct"], 0.39)
+        self.assertEqual(by_code["000001.SZ"]["intraday_limit_reopen_status"], "near_limit_without_touch")
+        self.assertEqual(by_code["000001.SZ"]["intraday_close_gap_pct"], 5.26)
+
+    def test_screen_pullback_add_price_limit_candidates_with_intraday_keeps_blocked_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            duckdb_root = root / "duckdb"
+            duckdb_root.mkdir()
+            _create_market_meta_db(duckdb_root / "market_meta.duckdb")
+            _create_market_base_day_db(duckdb_root / "market_base_day.duckdb")
+
+            def fake_read_intraday_range(tdx_root: Path, ts_code: str, trade_date: str) -> dict[str, object]:
+                if ts_code == "300123.SZ":
+                    return {
+                        "result": "blocked",
+                        "reason": "intraday_bar_file_missing",
+                        "trade_date": trade_date,
+                        "intraday_range": None,
+                        "formal_data_write_allowed": False,
+                    }
+                return {
+                    "result": "source_review_required",
+                    "selected_source": "tdx_lc5_intraday_range",
+                    "trade_date": trade_date,
+                    "intraday_range": {
+                        "ts_code": ts_code,
+                        "trade_date": trade_date,
+                        "bar_count": 48,
+                        "intraday_open": 10.9,
+                        "intraday_high": 11.0,
+                        "intraday_low": 10.3,
+                        "intraday_close": 10.8,
+                        "source_ref": "fixture:any.lc5",
+                    },
+                    "formal_data_write_allowed": False,
+                }
+
+            with patch(
+                "data_sources.tdx_local.price_limit_sample_pool.read_intraday_range",
+                side_effect=fake_read_intraday_range,
+            ):
+                rows = screen_pullback_add_price_limit_candidates_with_intraday(
+                    duckdb_root=duckdb_root,
+                    tdx_root=root / "tdx",
+                    window_start="2026-03-24",
+                    window_end="2026-03-31",
+                )
+
+        by_code = {row["ts_code"]: row for row in rows}
+        self.assertEqual(by_code["300123.SZ"]["intraday_review_result"], "blocked")
+        self.assertEqual(by_code["300123.SZ"]["intraday_review_reason"], "intraday_bar_file_missing")
+        self.assertIsNone(by_code["300123.SZ"]["intraday_nearest_limit_gap_pct"])
+        self.assertIsNone(by_code["300123.SZ"]["intraday_limit_reopen_status"])
+
+    def test_shortlist_pullback_add_pressure_adjust_candidates_prefers_reopened_and_near_without_touch(self) -> None:
+        rows = [
+            {
+                "ts_code": "A.SH",
+                "close_return_pct": -3.0,
+                "runup_pct": 50.0,
+                "intraday_review_result": "source_review_required",
+                "intraday_limit_reopen_status": "reopened_after_limit_touch",
+                "intraday_nearest_limit_gap_pct": 0.0,
+            },
+            {
+                "ts_code": "B.SH",
+                "close_return_pct": -10.0,
+                "runup_pct": 55.0,
+                "intraday_review_result": "source_review_required",
+                "intraday_limit_reopen_status": "closed_at_limit_after_touch",
+                "intraday_nearest_limit_gap_pct": 0.0,
+            },
+            {
+                "ts_code": "C.SH",
+                "close_return_pct": -7.0,
+                "runup_pct": 30.0,
+                "intraday_review_result": "source_review_required",
+                "intraday_limit_reopen_status": "near_limit_without_touch",
+                "intraday_nearest_limit_gap_pct": 0.05,
+            },
+            {
+                "ts_code": "D.SH",
+                "close_return_pct": -9.0,
+                "runup_pct": 60.0,
+                "intraday_review_result": "source_review_required",
+                "intraday_limit_reopen_status": "reopened_after_limit_touch",
+                "intraday_nearest_limit_gap_pct": 0.0,
+            },
+            {
+                "ts_code": "E.SH",
+                "close_return_pct": -4.0,
+                "runup_pct": 20.0,
+                "intraday_review_result": "blocked",
+                "intraday_limit_reopen_status": None,
+                "intraday_nearest_limit_gap_pct": None,
+            },
+        ]
+
+        shortlist = shortlist_pullback_add_pressure_adjust_candidates(rows, limit=3, max_close_drop_pct=8.5)
+
+        self.assertEqual([row["ts_code"] for row in shortlist], ["A.SH", "C.SH"])
+        self.assertEqual(shortlist[0]["pressure_adjust_priority_rank"], 1)
+        self.assertEqual(shortlist[0]["pressure_adjust_alignment"], "higher_priority")
+        self.assertEqual(shortlist[1]["pressure_adjust_priority_rank"], 2)
+        self.assertEqual(shortlist[1]["pressure_adjust_alignment"], "higher_priority")
+
+    def test_shortlist_pullback_add_pressure_adjust_candidates_sorts_by_gap_then_close_drop(self) -> None:
+        rows = [
+            {
+                "ts_code": "A.SH",
+                "close_return_pct": -4.0,
+                "runup_pct": 30.0,
+                "intraday_review_result": "source_review_required",
+                "intraday_limit_reopen_status": "reopened_after_limit_touch",
+                "intraday_nearest_limit_gap_pct": 0.03,
+            },
+            {
+                "ts_code": "B.SH",
+                "close_return_pct": -2.5,
+                "runup_pct": 25.0,
+                "intraday_review_result": "source_review_required",
+                "intraday_limit_reopen_status": "reopened_after_limit_touch",
+                "intraday_nearest_limit_gap_pct": 0.0,
+            },
+            {
+                "ts_code": "C.SH",
+                "close_return_pct": -5.0,
+                "runup_pct": 60.0,
+                "intraday_review_result": "source_review_required",
+                "intraday_limit_reopen_status": "reopened_after_limit_touch",
+                "intraday_nearest_limit_gap_pct": 0.0,
+            },
+        ]
+
+        shortlist = shortlist_pullback_add_pressure_adjust_candidates(rows, limit=3, max_close_drop_pct=8.5)
+
+        self.assertEqual([row["ts_code"] for row in shortlist], ["B.SH", "C.SH", "A.SH"])
+
+    def test_shortlist_formal_pressure_adjust_review_candidates_mixes_reopened_and_near_limit(self) -> None:
+        rows = [
+            {
+                "ts_code": "R1.SH",
+                "symbol_name": "Reopen One",
+                "trade_date": "2026-03-30",
+                "nearest_limit_side": "down_limit_side",
+                "close_return_pct": -3.0,
+                "runup_pct": 40.0,
+                "proximity_bucket": "at_limit_candidate",
+                "intraday_review_result": "source_review_required",
+                "intraday_limit_reopen_status": "reopened_after_limit_touch",
+                "intraday_nearest_limit_gap_pct": 0.0,
+            },
+            {
+                "ts_code": "R2.SH",
+                "symbol_name": "Reopen Two",
+                "trade_date": "2026-03-29",
+                "nearest_limit_side": "up_limit_side",
+                "close_return_pct": -4.0,
+                "runup_pct": 50.0,
+                "proximity_bucket": "at_limit_candidate",
+                "intraday_review_result": "source_review_required",
+                "intraday_limit_reopen_status": "reopened_after_limit_touch",
+                "intraday_nearest_limit_gap_pct": 0.0,
+            },
+            {
+                "ts_code": "R3.SH",
+                "symbol_name": "Reopen Three",
+                "trade_date": "2026-03-28",
+                "nearest_limit_side": "down_limit_side",
+                "close_return_pct": -5.0,
+                "runup_pct": 35.0,
+                "proximity_bucket": "at_limit_candidate",
+                "intraday_review_result": "source_review_required",
+                "intraday_limit_reopen_status": "reopened_after_limit_touch",
+                "intraday_nearest_limit_gap_pct": 0.0,
+            },
+            {
+                "ts_code": "N1.SZ",
+                "symbol_name": "Near One",
+                "trade_date": "2026-04-03",
+                "nearest_limit_side": "down_limit_side",
+                "close_return_pct": -7.0,
+                "runup_pct": 20.0,
+                "proximity_bucket": "near_limit_candidate",
+                "intraday_review_result": "source_review_required",
+                "intraday_limit_reopen_status": "near_limit_without_touch",
+                "intraday_nearest_limit_gap_pct": 0.05,
+            },
+            {
+                "ts_code": "N2.SZ",
+                "symbol_name": "Near Two",
+                "trade_date": "2026-04-02",
+                "nearest_limit_side": "down_limit_side",
+                "close_return_pct": -7.5,
+                "runup_pct": 25.0,
+                "proximity_bucket": "near_limit_candidate",
+                "intraday_review_result": "source_review_required",
+                "intraday_limit_reopen_status": "near_limit_without_touch",
+                "intraday_nearest_limit_gap_pct": 0.06,
+            },
+            {
+                "ts_code": "C1.SH",
+                "symbol_name": "Closed One",
+                "trade_date": "2026-03-27",
+                "nearest_limit_side": "down_limit_side",
+                "close_return_pct": -10.0,
+                "runup_pct": 60.0,
+                "proximity_bucket": "at_limit_candidate",
+                "intraday_review_result": "source_review_required",
+                "intraday_limit_reopen_status": "closed_at_limit_after_touch",
+                "intraday_nearest_limit_gap_pct": 0.0,
+            },
+        ]
+
+        shortlist = shortlist_formal_pressure_adjust_review_candidates(
+            rows,
+            reopened_limit=3,
+            near_limit=2,
+            max_close_drop_pct=8.5,
+        )
+
+        self.assertEqual([row["ts_code"] for row in shortlist], ["R1.SH", "R2.SH", "R3.SH", "N1.SZ", "N2.SZ"])
+        self.assertEqual(shortlist[0]["formal_review_bucket"], "pressure_adjust_reopen")
+        self.assertEqual(shortlist[3]["formal_review_bucket"], "near_limit_compare")
+        self.assertEqual(shortlist[-1]["formal_review_priority_rank"], 5)
+
+    def test_shortlist_formal_pressure_adjust_review_candidates_prefers_tighter_near_limit(self) -> None:
+        rows = [
+            {
+                "ts_code": "R1.SH",
+                "symbol_name": "Reopen One",
+                "trade_date": "2026-03-30",
+                "nearest_limit_side": "down_limit_side",
+                "close_return_pct": -3.0,
+                "runup_pct": 40.0,
+                "proximity_bucket": "at_limit_candidate",
+                "intraday_review_result": "source_review_required",
+                "intraday_limit_reopen_status": "reopened_after_limit_touch",
+                "intraday_nearest_limit_gap_pct": 0.0,
+            },
+            {
+                "ts_code": "N1.SZ",
+                "symbol_name": "Near One",
+                "trade_date": "2026-04-03",
+                "nearest_limit_side": "down_limit_side",
+                "close_return_pct": -7.5,
+                "runup_pct": 25.0,
+                "proximity_bucket": "near_limit_candidate",
+                "intraday_review_result": "source_review_required",
+                "intraday_limit_reopen_status": "near_limit_without_touch",
+                "intraday_nearest_limit_gap_pct": 0.06,
+            },
+            {
+                "ts_code": "N2.SZ",
+                "symbol_name": "Near Two",
+                "trade_date": "2026-04-02",
+                "nearest_limit_side": "down_limit_side",
+                "close_return_pct": -7.0,
+                "runup_pct": 20.0,
+                "proximity_bucket": "near_limit_candidate",
+                "intraday_review_result": "source_review_required",
+                "intraday_limit_reopen_status": "near_limit_without_touch",
+                "intraday_nearest_limit_gap_pct": 0.05,
+            },
+        ]
+
+        shortlist = shortlist_formal_pressure_adjust_review_candidates(
+            rows,
+            reopened_limit=1,
+            near_limit=1,
+            max_close_drop_pct=8.5,
+        )
+
+        self.assertEqual([row["ts_code"] for row in shortlist], ["R1.SH", "N2.SZ"])
+
+    def test_shortlist_core_malf_snapshot_candidates_prefers_pressure_adjust_reopen_rows(self) -> None:
+        rows = [
+            {
+                "ts_code": "R1.SH",
+                "symbol_name": "Reopen One",
+                "trade_date": "2026-04-01",
+                "formal_review_bucket": "pressure_adjust_reopen",
+                "formal_review_priority_rank": 1,
+                "nearest_limit_side": "down_limit_side",
+            },
+            {
+                "ts_code": "R2.SH",
+                "symbol_name": "Reopen Two",
+                "trade_date": "2026-03-30",
+                "formal_review_bucket": "pressure_adjust_reopen",
+                "formal_review_priority_rank": 2,
+                "nearest_limit_side": "down_limit_side",
+            },
+            {
+                "ts_code": "R3.SH",
+                "symbol_name": "Reopen Three",
+                "trade_date": "2026-03-30",
+                "formal_review_bucket": "pressure_adjust_reopen",
+                "formal_review_priority_rank": 3,
+                "nearest_limit_side": "up_limit_side",
+            },
+            {
+                "ts_code": "R4.SH",
+                "symbol_name": "Reopen Four",
+                "trade_date": "2026-03-27",
+                "formal_review_bucket": "pressure_adjust_reopen",
+                "formal_review_priority_rank": 4,
+                "nearest_limit_side": "down_limit_side",
+            },
+            {
+                "ts_code": "N1.SZ",
+                "symbol_name": "Near One",
+                "trade_date": "2026-04-03",
+                "formal_review_bucket": "near_limit_compare",
+                "formal_review_priority_rank": 5,
+                "nearest_limit_side": "down_limit_side",
+            },
+        ]
+
+        shortlist = shortlist_core_malf_snapshot_candidates(rows, limit=4)
+
+        self.assertEqual([row["ts_code"] for row in shortlist], ["R1.SH", "R2.SH", "R3.SH", "R4.SH"])
+        self.assertEqual(shortlist[0]["core_review_bucket"], "malf_snapshot_priority")
+        self.assertEqual(shortlist[0]["core_snapshot_focus"], "pressure_adjust_reopen_core")
+        self.assertEqual(shortlist[-1]["core_review_priority_rank"], 4)
+
+    def test_shortlist_core_malf_snapshot_candidates_can_fall_back_to_near_limit_compare(self) -> None:
+        rows = [
+            {
+                "ts_code": "R1.SH",
+                "symbol_name": "Reopen One",
+                "trade_date": "2026-04-01",
+                "formal_review_bucket": "pressure_adjust_reopen",
+                "formal_review_priority_rank": 1,
+                "nearest_limit_side": "down_limit_side",
+            },
+            {
+                "ts_code": "R2.SH",
+                "symbol_name": "Reopen Two",
+                "trade_date": "2026-03-30",
+                "formal_review_bucket": "pressure_adjust_reopen",
+                "formal_review_priority_rank": 2,
+                "nearest_limit_side": "up_limit_side",
+            },
+            {
+                "ts_code": "N1.SZ",
+                "symbol_name": "Near One",
+                "trade_date": "2026-04-03",
+                "formal_review_bucket": "near_limit_compare",
+                "formal_review_priority_rank": 3,
+                "nearest_limit_side": "down_limit_side",
+            },
+            {
+                "ts_code": "N2.SZ",
+                "symbol_name": "Near Two",
+                "trade_date": "2026-03-30",
+                "formal_review_bucket": "near_limit_compare",
+                "formal_review_priority_rank": 4,
+                "nearest_limit_side": "down_limit_side",
+            },
+        ]
+
+        shortlist = shortlist_core_malf_snapshot_candidates(rows, limit=3)
+
+        self.assertEqual([row["ts_code"] for row in shortlist], ["R1.SH", "R2.SH", "N1.SZ"])
+        self.assertEqual(shortlist[2]["core_snapshot_focus"], "near_limit_compare_backup")
+        self.assertEqual(shortlist[2]["core_review_priority_rank"], 3)
 
 
 if __name__ == "__main__":

@@ -119,6 +119,61 @@ def read_daily_bars(
     return _read_text_bar_file(path, ts_code, limit, root)
 
 
+def read_intraday_range(
+    tdx_root: str | Path,
+    ts_code: str,
+    trade_date: str,
+) -> dict[str, Any]:
+    path = _lc5_bar_path(Path(tdx_root), ts_code)
+    if not path.exists():
+        return {
+            "result": "blocked",
+            "reason": "intraday_bar_file_missing",
+            "trade_date": trade_date,
+            "intraday_range": None,
+            "formal_data_write_allowed": False,
+        }
+    try:
+        from pytdx.reader import TdxLCMinBarReader
+    except Exception as exc:
+        return {
+            "result": "blocked",
+            "reason": f"pytdx_reader_import_failed:{type(exc).__name__}",
+            "trade_date": trade_date,
+            "intraday_range": None,
+            "formal_data_write_allowed": False,
+        }
+    reader = TdxLCMinBarReader()
+    bars = reader.get_df(path.as_posix())
+    day_bars = bars[bars.index.strftime("%Y-%m-%d") == trade_date]
+    if day_bars.empty:
+        return {
+            "result": "blocked",
+            "reason": "intraday_trade_date_missing",
+            "trade_date": trade_date,
+            "intraday_range": None,
+            "formal_data_write_allowed": False,
+        }
+    first_bar = day_bars.iloc[0]
+    last_bar = day_bars.iloc[-1]
+    return {
+        "result": "source_review_required",
+        "selected_source": "tdx_lc5_intraday_range",
+        "trade_date": trade_date,
+        "intraday_range": {
+            "ts_code": ts_code,
+            "trade_date": trade_date,
+            "bar_count": int(len(day_bars)),
+            "intraday_open": round(float(first_bar["open"]), 4),
+            "intraday_high": round(float(day_bars["high"].max()), 4),
+            "intraday_low": round(float(day_bars["low"].min()), 4),
+            "intraday_close": round(float(last_bar["close"]), 4),
+            "source_ref": path.as_posix(),
+        },
+        "formal_data_write_allowed": False,
+    }
+
+
 def read_sector_membership(
     offline_root: str | Path,
     tdx_root: str | Path | None = None,
@@ -355,6 +410,12 @@ def _raw_day_path(root: Path, ts_code: str) -> Path:
     code, suffix = _split_ts_code(ts_code)
     market = SUFFIX_TO_MARKET[suffix]
     return root / "raw" / market / "lday" / f"{market}{code}.day"
+
+
+def _lc5_bar_path(root: Path, ts_code: str) -> Path:
+    code, suffix = _split_ts_code(ts_code)
+    market = SUFFIX_TO_MARKET[suffix]
+    return root / "vipdoc" / market / "fzline" / f"{market}{code}.lc5"
 
 
 def _text_bar_path(root: Path, ts_code: str, adjustment: str) -> Path:

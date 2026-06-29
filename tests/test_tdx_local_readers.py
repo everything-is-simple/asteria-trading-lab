@@ -5,6 +5,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -14,6 +15,7 @@ from data_sources.tdx_local import (
     inspect_duckdb_assets,
     probe_pytdx_reader,
     read_daily_bars,
+    read_intraday_range,
     read_sector_membership,
     read_symbol_master,
     read_trading_calendar,
@@ -365,6 +367,69 @@ class TdxLocalReadersTest(unittest.TestCase):
                 "source_ref": (hq_cache / "tdxhy.cfg").as_posix(),
             },
         ])
+
+    def test_read_intraday_range_blocks_when_lc5_file_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            report = read_intraday_range(
+                tdx_root=root / "tdx",
+                ts_code="000020.SZ",
+                trade_date="2026-03-24",
+            )
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertEqual(report["reason"], "intraday_bar_file_missing")
+        self.assertEqual(report["intraday_range"], None)
+        self.assertFalse(report["formal_data_write_allowed"])
+
+    def test_read_intraday_range_reads_lc5_day_range_as_research_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tdx_root = root / "tdx"
+            lc5_path = tdx_root / "vipdoc" / "sz" / "fzline" / "sz000020.lc5"
+            lc5_path.parent.mkdir(parents=True)
+            lc5_path.write_bytes(b"fixture")
+
+            import pandas as pd
+
+            df = pd.DataFrame(
+                [
+                    {"open": 20.10, "high": 20.58, "low": 19.82, "close": 20.22, "amount": 10.0, "volume": 100},
+                    {"open": 20.22, "high": 20.31, "low": 18.90, "close": 18.95, "amount": 12.0, "volume": 120},
+                    {"open": 18.95, "high": 19.05, "low": 18.91, "close": 19.00, "amount": 11.0, "volume": 110},
+                ],
+                index=pd.to_datetime(
+                    [
+                        "2026-03-24 09:35:00",
+                        "2026-03-24 14:45:00",
+                        "2026-03-25 09:35:00",
+                    ]
+                ),
+            )
+            df.index.name = "date"
+
+            with patch("pytdx.reader.TdxLCMinBarReader.get_df", return_value=df):
+                report = read_intraday_range(
+                    tdx_root=tdx_root,
+                    ts_code="000020.SZ",
+                    trade_date="2026-03-24",
+                )
+
+        self.assertEqual(report["result"], "source_review_required")
+        self.assertEqual(report["selected_source"], "tdx_lc5_intraday_range")
+        self.assertEqual(report["trade_date"], "2026-03-24")
+        self.assertFalse(report["formal_data_write_allowed"])
+        self.assertEqual(report["intraday_range"], {
+            "ts_code": "000020.SZ",
+            "trade_date": "2026-03-24",
+            "bar_count": 2,
+            "intraday_open": 20.1,
+            "intraday_high": 20.58,
+            "intraday_low": 18.9,
+            "intraday_close": 18.95,
+            "source_ref": lc5_path.as_posix(),
+        })
 
     def test_readers_support_real_duckdb_named_schema_and_prefixed_symbols(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
