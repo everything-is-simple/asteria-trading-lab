@@ -18,6 +18,7 @@ from ashare_intake_validator import (
 from data_sources.tdx_local import (
     audit_first_batch_sample_coverage,
     build_first_batch_sample_package,
+    build_shortlist_sample_package,
 )
 
 
@@ -40,6 +41,138 @@ def write_day_records(path: Path, records: list[tuple[int, int, int, int, int, f
 
 
 class TdxLocalFirstBatchTest(unittest.TestCase):
+    def test_build_shortlist_sample_package_materializes_pullback_pressure_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            offline_root = root / "offline"
+            duckdb_root = root / "duckdb"
+            tdx_root = root / "tdx"
+            data_root = root / "data-root"
+            duckdb_root.mkdir()
+            (tdx_root / "vipdoc").mkdir(parents=True)
+
+            candidate_windows = {
+                ("sh", "600310"): [
+                    (20260324, 500, 560, 490, 550, 1000000.0, 100000),
+                    (20260325, 550, 610, 540, 600, 1100000.0, 110000),
+                    (20260326, 600, 650, 590, 640, 1200000.0, 120000),
+                    (20260327, 640, 660, 620, 660, 1300000.0, 130000),
+                    (20260330, 699, 726, 618, 632, 1400000.0, 140000),
+                ],
+                ("sz", "002663"): [
+                    (20260330, 220, 225, 218, 224, 1000000.0, 100000),
+                    (20260331, 224, 232, 223, 230, 1100000.0, 110000),
+                    (20260401, 230, 244, 228, 238, 1200000.0, 120000),
+                    (20260402, 238, 240, 219, 219, 1300000.0, 130000),
+                    (20260403, 218, 220, 197, 201, 1400000.0, 140000),
+                ],
+            }
+            for (market, code), rows in candidate_windows.items():
+                write_day_records(offline_root / "raw" / market / "lday" / f"{market}{code}.day", rows)
+
+            import duckdb
+
+            con = duckdb.connect(str(duckdb_root / "market_meta.duckdb"))
+            con.execute("create schema market_meta")
+            con.execute(
+                """
+                create table market_meta.market_meta.instrument_master (
+                    symbol varchar,
+                    asset_type varchar,
+                    exchange varchar,
+                    name varchar,
+                    list_dt date,
+                    delist_dt date,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.execute(
+                """
+                create table market_meta.market_meta.industry_block_relation (
+                    symbol varchar,
+                    asset_type varchar,
+                    relation_type varchar,
+                    relation_code varchar,
+                    relation_name varchar,
+                    effective_from date,
+                    effective_to date,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.executemany(
+                """
+                insert into market_meta.market_meta.instrument_master values (?, 'stock', ?, ?, '2020-01-01', null, 'run-1', 'v1', 'r1', 'hash-1')
+                """,
+                [
+                    ("sh600310", "SH", "Guangxi Energy"),
+                    ("sz002663", "SZ", "Pubang Shares"),
+                ],
+            )
+            con.executemany(
+                """
+                insert into market_meta.market_meta.industry_block_relation values (?, 'stock', 'industry', ?, ?, '2026-03-01', null, 'run-1', 'v1', 'r1', 'hash-1')
+                """,
+                [
+                    ("sh600310", "T0101", "Utilities"),
+                    ("sz002663", "T0202", "Construction"),
+                ],
+            )
+            con.close()
+
+            sample_entries = [
+                {
+                    "ts_code": "600310.SH",
+                    "sample_window_start": "2026-03-24",
+                    "sample_window_end": "2026-03-30",
+                    "expected_structure_target": "limited",
+                    "snapshot_preset": "pullback_pressure",
+                    "selection_reason": "upper-limit-side shortlist candidate",
+                    "evidence_ref": "unit-test:600310-shortlist",
+                },
+                {
+                    "ts_code": "002663.SZ",
+                    "sample_window_start": "2026-03-30",
+                    "sample_window_end": "2026-04-03",
+                    "expected_structure_target": "limited",
+                    "snapshot_preset": "pullback_pressure",
+                    "selection_reason": "near-limit shortlist candidate",
+                    "evidence_ref": "unit-test:002663-shortlist",
+                },
+            ]
+
+            report = build_shortlist_sample_package(
+                data_root=data_root,
+                tdx_root=tdx_root,
+                offline_root=offline_root,
+                duckdb_root=duckdb_root,
+                sample_entries=sample_entries,
+                generated_at="2026-06-29T21:00:00+08:00",
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["generated_sample_count"], 2)
+        self.assertEqual(report["front_filter_report"]["result"], "pass")
+        self.assertEqual(report["front_filter_report"]["front_filter_run_count"], 2)
+        self.assertEqual(
+            {item["qualification_rule_id"] for item in report["front_filter_report"]["front_filter_results"]},
+            {"Q-PRESSURE-ADJUST"},
+        )
+        self.assertEqual(
+            {item["rhythm_meaning"] for item in report["front_filter_report"]["front_filter_results"]},
+            {"limited"},
+        )
+        for result in report["front_filter_report"]["front_filter_results"]:
+            self.assertEqual(result["tachibana_applicability"], "conditional")
+            self.assertEqual(result["next_action"], "action:fill_qualification_record")
+
     def test_build_first_batch_sample_package_materializes_ready_intake_and_audit_chain(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

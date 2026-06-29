@@ -247,6 +247,24 @@ def build_first_batch_sample_package(
     }
 
 
+def build_shortlist_sample_package(
+    data_root: str | Path,
+    tdx_root: str | Path,
+    offline_root: str | Path,
+    duckdb_root: str | Path,
+    sample_entries: list[dict[str, Any]],
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    return build_first_batch_sample_package(
+        data_root=data_root,
+        tdx_root=tdx_root,
+        offline_root=offline_root,
+        duckdb_root=duckdb_root,
+        sample_entries=sample_entries,
+        generated_at=generated_at,
+    )
+
+
 def audit_first_batch_sample_coverage(data_root: str | Path) -> dict[str, Any]:
     root = Path(data_root)
     manifest_entries = _load_manifest_entries(root)

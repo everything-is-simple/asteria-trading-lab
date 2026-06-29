@@ -222,3 +222,7 @@
 1. 扩展真实 `add_on / pullback_add` 样本池，优先寻找能支持 `near_limit / at_limit` 的样本
 2. 在 `price-limit-event-relations` 目录层固定 reviewed evidence 的接口说明与使用边界
 3. 继续保持 `close_limit_status / touched_limit_status` 在后备层，直到重复歧义真正出现
+
+本轮样本池预筛续作见：
+
+- [Tachibana-A股-add_on-price_limit-样本池预筛清单-v0.1.md](./Tachibana-A股-add_on-price_limit-样本池预筛清单-v0.1.md)
