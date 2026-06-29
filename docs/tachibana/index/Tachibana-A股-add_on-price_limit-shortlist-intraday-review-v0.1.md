@@ -370,3 +370,95 @@
 
 1. 继续保留这些样本作为 `near_limit / at_limit` proximity 研究候选
 2. 另行补时间对齐行业标签来源，才能把它们推进到正式结构资格复核链路
+
+## 9. 当前已落地的 research prep 入口
+
+为了不把这批样本硬塞进正式 `structure_candidate -> front_filter` 链路，本轮已经新增一个只读 research-prep helper：
+
+- [first_batch.py](/Z:/asteria-trading-lab/src/data_sources/tdx_local/first_batch.py) 中的 `build_shortlist_malf_research_prep(...)`
+
+对应测试：
+
+- [test_tdx_local_first_batch.py](/Z:/asteria-trading-lab/tests/test_tdx_local_first_batch.py)
+
+它的职责不是生成正式接入包，而是把 core 4 / backup 2 样本整理成一张诚实的准备清单。每条记录只提供：
+
+- `ts_code / symbol_name / trade_date / sample_window_start / sample_window_end`
+- `research_priority_group = core / backup`
+- `formal_review_bucket / core_snapshot_focus`
+- 窗口日线摘要与事件日摘要
+- 当前行业参考
+- `industry_window_status`
+- `formal_front_filter_status`
+- `formal_front_filter_issue`
+- `snapshot_stub`
+- `ashare_sample_id_suggestion`
+- `suggested_front_filter_command`
+- `suggested_record_draft_command`
+
+这里最关键的边界有三条：
+
+1. `research_only = true`
+2. `formal_data_write_allowed = false`
+3. `institution_rule_definition_allowed / signal_generation_allowed / backtest_execution_allowed` 全部保持 `false`
+
+也就是说，它做的是：
+
+- 把“下一拍该准备哪几个 snapshot、它们为什么被卡住、如果不卡下一步命令会是什么”整理出来
+
+而不是：
+
+- 假装这些样本已经具备 ready MALF snapshot
+- 假装已经可以直接跑正式 front-filter
+
+### 9.1 core 4 / backup 2 的当前 prep 分工
+
+当前最自然的 research-prep 分工仍然是：
+
+- **core 4**：`603538.SH / 603008.SH / 600310.SH / 603687.SH`
+- **backup 2**：`002663.SZ / 000899.SZ`
+
+helper 输出里，对这两层会分别保留：
+
+- `research_priority_group = core`
+- `research_priority_group = backup`
+
+其中 backup 2 的职责仍然只是：
+
+- `near_limit_compare`
+- 当 core 4 任一样本在后续 snapshot / front-filter research prep 里失去结构吸引力时，再补位
+
+### 9.2 helper 当前能给出的 formal 状态
+
+当前 helper 对每个样本只会落在三种 formal 状态之一：
+
+1. `formal_front_filter_status = blocked`
+2. `formal_front_filter_status = snapshot_pending`
+3. `formal_front_filter_status = ready`
+
+但在我们现在这条真实研究线上，最重要的是前两种：
+
+- `blocked`
+  - 表示行业窗口不重叠
+  - 典型问题码：`industry_membership_window_not_overlapping:<ts_code>`
+- `snapshot_pending`
+  - 表示行业窗口可以重叠
+  - 但还缺 `snapshot_quality_status=ready`
+  - 典型问题码：`pipeline_requires_ready_malf_snapshot`
+
+因此这个 helper 的意义不是“把阻断消掉”，而是把阻断位置说清楚：
+
+- 是还缺时间对齐行业标签
+- 还是已经可以开始准备最小 MALF snapshot
+
+### 9.3 当前这层真正推进了什么
+
+这一步最实际的价值是：
+
+1. core 4 / backup 2 已经不再只是口头 shortlist
+2. 每个样本已经有了统一的 research-prep 字段形状
+3. formal blocker 被精确拆成：
+   - `industry_membership_window_not_overlapping`
+   - `pipeline_requires_ready_malf_snapshot`
+
+于是接下来我们就能把下一拍动作继续压小，而不需要重新回到“大而空地讨论要不要 front-filter”。

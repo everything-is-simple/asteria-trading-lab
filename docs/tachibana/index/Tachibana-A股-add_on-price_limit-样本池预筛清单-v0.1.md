@@ -494,3 +494,30 @@
 推进到：
 
 - `not_near_limit + near_limit + at_limit` 的多样本可比面
+
+补一句当前已经落地的工程化推进：
+
+- shortlist 现在不只停在文档层，已经有一个只读 helper 可以把 core 4 / backup 2 整理成最小 `MALF snapshot / front-filter research prep` 清单：
+  - [first_batch.py](/Z:/asteria-trading-lab/src/data_sources/tdx_local/first_batch.py) 中的 `build_shortlist_malf_research_prep(...)`
+
+这层 helper 目前做三件事：
+
+1. 保留 core / backup 分组
+2. 给每个样本输出事件日摘要、当前行业参考与 `snapshot_stub`
+3. 明确区分：
+   - `industry_membership_window_not_overlapping`
+   - `pipeline_requires_ready_malf_snapshot`
+
+但它仍然不做：
+
+- 正式接入包写盘
+- ready MALF snapshot 伪造
+- front-filter 越级放行
+
+所以从工程状态上看，当前已经从：
+
+- “shortlist 只是一个研究结论”
+
+推进到：
+
+- “shortlist 已经有统一 research-prep 入口，但 formal front-filter readiness 仍被真实数据边界诚实拦住”

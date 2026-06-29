@@ -23,6 +23,18 @@ from .readers import (
 )
 
 
+FORBIDDEN_OUTPUT_FIELDS = {
+    "buy_signal",
+    "sell_signal",
+    "trade_accept",
+    "target_position",
+    "position_size",
+    "ashare_t1_action",
+    "limit_up_strategy",
+    "limit_down_strategy",
+}
+
+
 CANDIDATE_HEADER = [
     "ts_code",
     "symbol_name",
@@ -265,6 +277,157 @@ def build_shortlist_sample_package(
     )
 
 
+def build_shortlist_malf_research_prep(
+    tdx_root: str | Path,
+    offline_root: str | Path,
+    duckdb_root: str | Path,
+    sample_entries: list[dict[str, Any]],
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    sample_manifest = deepcopy(sample_entries)
+    generated_at_value = generated_at or datetime.now().astimezone().isoformat(timespec="seconds")
+
+    symbol_rows = read_symbol_master(tdx_root, offline_root, duckdb_root=duckdb_root)
+    symbol_index = {row["ts_code"]: row for row in symbol_rows if isinstance(row, dict) and row.get("ts_code")}
+    industry_index = _industry_membership_index(Path(duckdb_root))
+
+    samples: list[dict[str, Any]] = []
+    issues: list[str] = []
+
+    for entry in sample_manifest:
+        ts_code = str(entry.get("ts_code", ""))
+        if not ts_code:
+            issues.append("missing_ts_code_in_sample_manifest")
+            continue
+        symbol_row = symbol_index.get(ts_code)
+        if symbol_row is None:
+            issues.append(f"missing_symbol_master:{ts_code}")
+            continue
+        daily_rows = _window_rows(read_daily_bars(offline_root, ts_code), entry)
+        if not daily_rows:
+            issues.append(f"missing_daily_window:{ts_code}")
+            continue
+
+        trade_date = str(entry.get("trade_date", ""))
+        event_row = next((row for row in daily_rows if str(row.get("trade_date", "")) == trade_date), None)
+        if trade_date and event_row is None:
+            issues.append(f"event_trade_date_not_in_daily_window:{ts_code}:{trade_date}")
+            continue
+
+        industry_rows = industry_index.get(ts_code, [])
+        overlapping_industry_row = _select_industry_row(
+            industry_rows,
+            str(entry.get("sample_window_start", "")),
+            str(entry.get("sample_window_end", "")),
+        )
+        current_industry_row = _select_current_industry_row(industry_rows)
+
+        industry_window_status = "overlapping" if overlapping_industry_row is not None else "not_overlapping"
+        formal_front_filter_status = "snapshot_pending" if overlapping_industry_row is not None else "blocked"
+        formal_front_filter_issue = (
+            "pipeline_requires_ready_malf_snapshot"
+            if overlapping_industry_row is not None
+            else f"industry_membership_window_not_overlapping:{ts_code}"
+        )
+        if current_industry_row is None:
+            industry_window_status = "missing"
+            formal_front_filter_status = "blocked"
+            formal_front_filter_issue = f"industry_membership_reference_missing:{ts_code}"
+
+        symbol_name = str(symbol_row.get("symbol_name") or "UNKNOWN")
+        snapshot_stub = _research_snapshot_stub(ts_code, daily_rows, entry, generated_at_value)
+        suggested_snapshot_file = _suggested_snapshot_file(snapshot_stub)
+        ashare_sample_id = _ashare_sample_id_suggestion(
+            ts_code,
+            snapshot_stub.get("window_start"),
+            snapshot_stub.get("window_end"),
+        )
+        sample_report = {
+            "ts_code": ts_code,
+            "symbol_name": symbol_name,
+            "trade_date": trade_date,
+            "sample_window_start": str(entry.get("sample_window_start", "")),
+            "sample_window_end": str(entry.get("sample_window_end", "")),
+            "research_priority_group": _research_priority_group(entry),
+            "formal_review_bucket": str(entry.get("formal_review_bucket", "unknown")),
+            "core_snapshot_focus": str(entry.get("core_snapshot_focus", "research_prep_pending")),
+            "selection_reason": str(entry.get("selection_reason", "")),
+            "evidence_ref": str(entry.get("evidence_ref", "")),
+            "event_trade_date_in_window": event_row is not None,
+            "daily_window_row_count": len(daily_rows),
+            "daily_window_source_ref": str(daily_rows[0].get("source_ref", "")),
+            "event_day_summary": _event_day_summary(event_row),
+            "current_industry_code": str(current_industry_row.get("relation_code", "")) if current_industry_row else None,
+            "current_industry_name": str(current_industry_row.get("relation_name", "")) if current_industry_row else None,
+            "current_industry_valid_from": str(current_industry_row.get("valid_from", "")) if current_industry_row else None,
+            "current_industry_valid_to": str(current_industry_row.get("valid_to", "")) if current_industry_row else None,
+            "current_industry_source_ref": str(current_industry_row.get("source_ref", "")) if current_industry_row else None,
+            "current_industry_time_alignment_status": (
+                "window_overlapping" if overlapping_industry_row is not None else "current_reference_only"
+            ),
+            "industry_window_status": industry_window_status,
+            "formal_front_filter_status": formal_front_filter_status,
+            "formal_front_filter_issue": formal_front_filter_issue,
+            "snapshot_stub": snapshot_stub,
+            "suggested_snapshot_file": suggested_snapshot_file,
+            "ashare_sample_id_suggestion": ashare_sample_id,
+            "suggested_front_filter_command": _front_filter_command(suggested_snapshot_file),
+            "suggested_record_draft_command": _record_draft_command(
+                suggested_snapshot_file,
+                symbol_name,
+                ashare_sample_id,
+            ),
+            "research_boundary_warning": _research_boundary_warning(
+                research_priority_group=_research_priority_group(entry),
+                formal_front_filter_status=formal_front_filter_status,
+            ),
+            "next_action": _research_next_action(formal_front_filter_status),
+        }
+        samples.append(sample_report)
+
+    if issues:
+        return _strip_forbidden_fields(
+            {
+                "result": "blocked",
+                "issues": issues,
+                "sample_count": len(samples),
+                "research_only": True,
+                "formal_data_write_allowed": False,
+                "institution_rule_definition_allowed": False,
+                "signal_generation_allowed": False,
+                "backtest_execution_allowed": False,
+            }
+        )
+
+    core_sample_count = sum(1 for item in samples if item.get("research_priority_group") == "core")
+    backup_sample_count = sum(1 for item in samples if item.get("research_priority_group") == "backup")
+    formal_front_filter_ready_count = sum(1 for item in samples if item.get("formal_front_filter_status") == "ready")
+    blocked_formal_front_filter_count = sum(1 for item in samples if item.get("formal_front_filter_status") == "blocked")
+    snapshot_pending_formal_front_filter_count = sum(
+        1 for item in samples if item.get("formal_front_filter_status") == "snapshot_pending"
+    )
+
+    return _strip_forbidden_fields(
+        {
+            "result": "pass",
+            "generated_at": generated_at_value,
+            "research_only": True,
+            "sample_count": len(samples),
+            "core_sample_count": core_sample_count,
+            "backup_sample_count": backup_sample_count,
+            "formal_front_filter_ready_count": formal_front_filter_ready_count,
+            "blocked_formal_front_filter_count": blocked_formal_front_filter_count,
+            "snapshot_pending_formal_front_filter_count": snapshot_pending_formal_front_filter_count,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "samples": samples,
+            "next_action": "action:prepare_research_malf_snapshot",
+        }
+    )
+
+
 def audit_first_batch_sample_coverage(data_root: str | Path) -> dict[str, Any]:
     root = Path(data_root)
     manifest_entries = _load_manifest_entries(root)
@@ -502,3 +665,124 @@ def _load_manifest_entries(data_root: Path) -> list[dict[str, Any]]:
     if manifest_path.exists():
         return json.loads(manifest_path.read_text(encoding="utf-8-sig"))
     return deepcopy(DEFAULT_FIRST_BATCH_SAMPLE_ENTRIES)
+
+
+def _select_current_industry_row(rows: list[dict[str, str | None]]) -> dict[str, str | None] | None:
+    if not rows:
+        return None
+    ranked: list[tuple[datetime, dict[str, str | None]]] = []
+    for row in rows:
+        valid_from_dt = _parse_iso_date(str(row.get("valid_from") or "")) or datetime.min
+        ranked.append((valid_from_dt, row))
+    ranked.sort(key=lambda item: item[0])
+    return ranked[-1][1]
+
+
+def _research_priority_group(entry: dict[str, Any]) -> str:
+    priority_group = str(entry.get("research_priority_group", "")).strip().lower()
+    if priority_group in {"core", "backup"}:
+        return priority_group
+    core_focus = str(entry.get("core_snapshot_focus", ""))
+    if core_focus == "near_limit_compare_backup":
+        return "backup"
+    return "core"
+
+
+def _event_day_summary(event_row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if event_row is None:
+        return None
+    return {
+        "trade_date": str(event_row.get("trade_date", "")),
+        "open": event_row.get("open"),
+        "high": event_row.get("high"),
+        "low": event_row.get("low"),
+        "close": event_row.get("close"),
+        "volume": event_row.get("volume"),
+        "amount": event_row.get("amount"),
+    }
+
+
+def _research_snapshot_stub(
+    ts_code: str,
+    daily_rows: list[dict[str, Any]],
+    entry: dict[str, Any],
+    generated_at: str,
+) -> dict[str, Any]:
+    window_start = str(entry.get("sample_window_start", daily_rows[0]["trade_date"]))
+    window_end = str(entry.get("sample_window_end", daily_rows[-1]["trade_date"]))
+    return {
+        "malf_snapshot_ref": f"MALF-SNAP-{ts_code}-{window_start}-{window_end}-RESEARCH-PREP-v0.1",
+        "ts_code": ts_code,
+        "window_start": window_start,
+        "window_end": window_end,
+        "generated_at": generated_at,
+        "malf_version": "MALF_Definitive_v2_0+research_mapping_v0.1",
+        "malf_background": "unknown",
+        "wave_range_break_fields": {},
+        "evidence_ref": str(entry.get("evidence_ref", "")),
+        "snapshot_quality_status": "source_missing",
+    }
+
+
+def _suggested_snapshot_file(snapshot_stub: dict[str, Any]) -> str:
+    ts_code = str(snapshot_stub.get("ts_code", "UNKNOWN"))
+    window_start = str(snapshot_stub.get("window_start", "UNKNOWN"))
+    return f"ashare/malf-snapshots-v0.1/{ts_code}-{window_start[0:7]}.json"
+
+
+def _front_filter_command(malf_snapshot_file: str | None) -> str | None:
+    if not malf_snapshot_file:
+        return None
+    snapshot_path = malf_snapshot_file.replace("/", "\\")
+    return f"$env:PYTHONPATH='src'; python -m tachibana_front_filter --snapshot <data_root>\\{snapshot_path}"
+
+
+def _record_draft_command(malf_snapshot_file: str | None, symbol_name: str, ashare_sample_id: str) -> str | None:
+    front_filter_command = _front_filter_command(malf_snapshot_file)
+    if front_filter_command is None:
+        return None
+    escaped_symbol = symbol_name.replace('"', '\\"')
+    return (
+        f"{front_filter_command} --record-draft "
+        f"--ashare-sample-id {ashare_sample_id} --symbol-name \"{escaped_symbol}\""
+    )
+
+
+def _ashare_sample_id_suggestion(ts_code: str, window_start: str | None, window_end: str | None) -> str:
+    if window_start and window_end:
+        return f"ASHARE-{ts_code}-{window_start}-{window_end}"
+    return f"ASHARE-{ts_code}-<window>"
+
+
+def _research_boundary_warning(research_priority_group: str, formal_front_filter_status: str) -> list[str]:
+    warnings = [
+        "research_prep_is_not_formal_front_filter_ready",
+        "do_not_generate_trade_from_research_prep",
+    ]
+    if research_priority_group == "backup":
+        warnings.append("near_limit_compare_reserved_as_backup")
+    if formal_front_filter_status == "blocked":
+        warnings.append("do_not_borrow_future_industry_label")
+    if formal_front_filter_status == "snapshot_pending":
+        warnings.append("do_not_upgrade_without_ready_malf_snapshot")
+    return warnings
+
+
+def _research_next_action(formal_front_filter_status: str) -> str:
+    if formal_front_filter_status == "blocked":
+        return "action:hold_for_industry_time_alignment"
+    if formal_front_filter_status == "snapshot_pending":
+        return "action:prepare_malf_snapshot"
+    return "action:run_front_filter"
+
+
+def _strip_forbidden_fields(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _strip_forbidden_fields(item)
+            for key, item in value.items()
+            if key not in FORBIDDEN_OUTPUT_FIELDS
+        }
+    if isinstance(value, list):
+        return [_strip_forbidden_fields(item) for item in value]
+    return value

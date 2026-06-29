@@ -18,6 +18,7 @@ from ashare_intake_validator import (
 from data_sources.tdx_local import (
     audit_first_batch_sample_coverage,
     build_first_batch_sample_package,
+    build_shortlist_malf_research_prep,
     build_shortlist_sample_package,
 )
 
@@ -41,6 +42,335 @@ def write_day_records(path: Path, records: list[tuple[int, int, int, int, int, f
 
 
 class TdxLocalFirstBatchTest(unittest.TestCase):
+    def test_build_shortlist_malf_research_prep_keeps_non_overlapping_samples_in_research_only_flow(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            offline_root = root / "offline"
+            duckdb_root = root / "duckdb"
+            tdx_root = root / "tdx"
+            duckdb_root.mkdir()
+            (tdx_root / "vipdoc").mkdir(parents=True)
+
+            candidate_windows = {
+                ("sh", "603538"): [
+                    (20260324, 4000, 4050, 3980, 4030, 1000000.0, 100000),
+                    (20260325, 4030, 4100, 4020, 4080, 1100000.0, 110000),
+                    (20260326, 4080, 4180, 4060, 4160, 1200000.0, 120000),
+                    (20260330, 4160, 4210, 4050, 4070, 1300000.0, 130000),
+                    (20260401, 4070, 4172, 3681, 3985, 1400000.0, 140000),
+                    (20260403, 3985, 4020, 3900, 3950, 1500000.0, 150000),
+                ],
+                ("sz", "002663"): [
+                    (20260330, 220, 225, 218, 224, 1000000.0, 100000),
+                    (20260331, 224, 232, 223, 230, 1100000.0, 110000),
+                    (20260401, 230, 244, 228, 238, 1200000.0, 120000),
+                    (20260402, 238, 240, 219, 219, 1300000.0, 130000),
+                    (20260403, 218, 220, 197, 201, 1400000.0, 140000),
+                ],
+            }
+            for (market, code), rows in candidate_windows.items():
+                write_day_records(offline_root / "raw" / market / "lday" / f"{market}{code}.day", rows)
+
+            import duckdb
+
+            con = duckdb.connect(str(duckdb_root / "market_meta.duckdb"))
+            con.execute("create schema market_meta")
+            con.execute(
+                """
+                create table market_meta.market_meta.instrument_master (
+                    symbol varchar,
+                    asset_type varchar,
+                    exchange varchar,
+                    name varchar,
+                    list_dt date,
+                    delist_dt date,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.execute(
+                """
+                create table market_meta.market_meta.industry_block_relation (
+                    symbol varchar,
+                    asset_type varchar,
+                    relation_type varchar,
+                    relation_code varchar,
+                    relation_name varchar,
+                    effective_from date,
+                    effective_to date,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.executemany(
+                """
+                insert into market_meta.market_meta.instrument_master values (?, 'stock', ?, ?, '2020-01-01', null, 'run-1', 'v1', 'r1', 'hash-1')
+                """,
+                [
+                    ("sh603538", "SH", "Meinuohua"),
+                    ("sz002663", "SZ", "Pubang Shares"),
+                ],
+            )
+            con.executemany(
+                """
+                insert into market_meta.market_meta.industry_block_relation values (?, 'stock', 'industry', ?, ?, '2026-04-23', null, 'run-1', 'v1', 'r1', 'hash-1')
+                """,
+                [
+                    ("sh603538", "T0101", "Pharma"),
+                    ("sz002663", "T0202", "Construction"),
+                ],
+            )
+            con.close()
+
+            sample_entries = [
+                {
+                    "ts_code": "603538.SH",
+                    "trade_date": "2026-04-01",
+                    "sample_window_start": "2026-03-24",
+                    "sample_window_end": "2026-04-03",
+                    "research_priority_group": "core",
+                    "formal_review_bucket": "pressure_adjust_reopen",
+                    "core_snapshot_focus": "pressure_adjust_reopen_core",
+                    "selection_reason": "core reopened-touch candidate",
+                    "evidence_ref": "unit-test:603538-core-research-prep",
+                },
+                {
+                    "ts_code": "002663.SZ",
+                    "trade_date": "2026-04-03",
+                    "sample_window_start": "2026-03-24",
+                    "sample_window_end": "2026-04-03",
+                    "research_priority_group": "backup",
+                    "formal_review_bucket": "near_limit_compare",
+                    "core_snapshot_focus": "near_limit_compare_backup",
+                    "selection_reason": "backup near-limit compare candidate",
+                    "evidence_ref": "unit-test:002663-backup-research-prep",
+                },
+            ]
+
+            report = build_shortlist_malf_research_prep(
+                tdx_root=tdx_root,
+                offline_root=offline_root,
+                duckdb_root=duckdb_root,
+                sample_entries=sample_entries,
+                generated_at="2026-06-29T22:00:00+08:00",
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertTrue(report["research_only"])
+        self.assertFalse(report["formal_data_write_allowed"])
+        self.assertFalse(report["institution_rule_definition_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+        self.assertEqual(report["sample_count"], 2)
+        self.assertEqual(report["core_sample_count"], 1)
+        self.assertEqual(report["backup_sample_count"], 1)
+        self.assertEqual(report["formal_front_filter_ready_count"], 0)
+        self.assertEqual(report["blocked_formal_front_filter_count"], 2)
+
+        by_code = {item["ts_code"]: item for item in report["samples"]}
+        self.assertEqual(by_code["603538.SH"]["research_priority_group"], "core")
+        self.assertEqual(by_code["002663.SZ"]["research_priority_group"], "backup")
+        self.assertEqual(by_code["603538.SH"]["industry_window_status"], "not_overlapping")
+        self.assertEqual(by_code["603538.SH"]["formal_front_filter_status"], "blocked")
+        self.assertEqual(
+            by_code["603538.SH"]["formal_front_filter_issue"],
+            "industry_membership_window_not_overlapping:603538.SH",
+        )
+        self.assertEqual(by_code["603538.SH"]["current_industry_name"], "Pharma")
+        self.assertEqual(by_code["603538.SH"]["snapshot_stub"]["snapshot_quality_status"], "source_missing")
+        self.assertTrue(by_code["603538.SH"]["event_trade_date_in_window"])
+        self.assertIn("<data_root>", by_code["603538.SH"]["suggested_front_filter_command"])
+        self.assertTrue(FORBIDDEN_FIELDS.isdisjoint(report.keys()))
+        self.assertTrue(FORBIDDEN_FIELDS.isdisjoint(by_code["603538.SH"].keys()))
+
+    def test_build_shortlist_malf_research_prep_distinguishes_snapshot_pending_when_industry_window_overlaps(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            offline_root = root / "offline"
+            duckdb_root = root / "duckdb"
+            tdx_root = root / "tdx"
+            duckdb_root.mkdir()
+            (tdx_root / "vipdoc").mkdir(parents=True)
+
+            write_day_records(
+                offline_root / "raw" / "sh" / "lday" / "sh600310.day",
+                [
+                    (20260324, 500, 560, 490, 550, 1000000.0, 100000),
+                    (20260325, 550, 610, 540, 600, 1100000.0, 110000),
+                    (20260326, 600, 650, 590, 640, 1200000.0, 120000),
+                    (20260327, 640, 660, 620, 660, 1300000.0, 130000),
+                    (20260330, 699, 726, 618, 632, 1400000.0, 140000),
+                ],
+            )
+
+            import duckdb
+
+            con = duckdb.connect(str(duckdb_root / "market_meta.duckdb"))
+            con.execute("create schema market_meta")
+            con.execute(
+                """
+                create table market_meta.market_meta.instrument_master (
+                    symbol varchar,
+                    asset_type varchar,
+                    exchange varchar,
+                    name varchar,
+                    list_dt date,
+                    delist_dt date,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.execute(
+                """
+                create table market_meta.market_meta.industry_block_relation (
+                    symbol varchar,
+                    asset_type varchar,
+                    relation_type varchar,
+                    relation_code varchar,
+                    relation_name varchar,
+                    effective_from date,
+                    effective_to date,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.execute(
+                """
+                insert into market_meta.market_meta.instrument_master values
+                ('sh600310', 'stock', 'SH', 'Guangxi Energy', '2020-01-01', null, 'run-1', 'v1', 'r1', 'hash-1')
+                """
+            )
+            con.execute(
+                """
+                insert into market_meta.market_meta.industry_block_relation values
+                ('sh600310', 'stock', 'industry', 'T0101', 'Utilities', '2026-03-01', null, 'run-1', 'v1', 'r1', 'hash-1')
+                """
+            )
+            con.close()
+
+            report = build_shortlist_malf_research_prep(
+                tdx_root=tdx_root,
+                offline_root=offline_root,
+                duckdb_root=duckdb_root,
+                sample_entries=[
+                    {
+                        "ts_code": "600310.SH",
+                        "trade_date": "2026-03-30",
+                        "sample_window_start": "2026-03-24",
+                        "sample_window_end": "2026-03-30",
+                        "research_priority_group": "core",
+                        "formal_review_bucket": "pressure_adjust_reopen",
+                        "core_snapshot_focus": "pressure_adjust_reopen_core",
+                        "selection_reason": "up-limit-side core candidate",
+                        "evidence_ref": "unit-test:600310-overlap-research-prep",
+                    }
+                ],
+                generated_at="2026-06-29T22:05:00+08:00",
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["formal_front_filter_ready_count"], 0)
+        self.assertEqual(report["blocked_formal_front_filter_count"], 0)
+        self.assertEqual(report["snapshot_pending_formal_front_filter_count"], 1)
+        sample = report["samples"][0]
+        self.assertEqual(sample["industry_window_status"], "overlapping")
+        self.assertEqual(sample["formal_front_filter_status"], "snapshot_pending")
+        self.assertEqual(sample["formal_front_filter_issue"], "pipeline_requires_ready_malf_snapshot")
+        self.assertEqual(sample["current_industry_name"], "Utilities")
+        self.assertEqual(sample["snapshot_stub"]["ts_code"], "600310.SH")
+        self.assertEqual(sample["snapshot_stub"]["window_start"], "2026-03-24")
+        self.assertEqual(sample["snapshot_stub"]["window_end"], "2026-03-30")
+
+    def test_build_shortlist_malf_research_prep_blocks_missing_daily_window(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            offline_root = root / "offline"
+            duckdb_root = root / "duckdb"
+            tdx_root = root / "tdx"
+            duckdb_root.mkdir()
+            (tdx_root / "vipdoc").mkdir(parents=True)
+
+            import duckdb
+
+            con = duckdb.connect(str(duckdb_root / "market_meta.duckdb"))
+            con.execute("create schema market_meta")
+            con.execute(
+                """
+                create table market_meta.market_meta.instrument_master (
+                    symbol varchar,
+                    asset_type varchar,
+                    exchange varchar,
+                    name varchar,
+                    list_dt date,
+                    delist_dt date,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.execute(
+                """
+                create table market_meta.market_meta.industry_block_relation (
+                    symbol varchar,
+                    asset_type varchar,
+                    relation_type varchar,
+                    relation_code varchar,
+                    relation_name varchar,
+                    effective_from date,
+                    effective_to date,
+                    source_run_id varchar,
+                    schema_version varchar,
+                    rule_version varchar,
+                    source_manifest_hash varchar
+                )
+                """
+            )
+            con.execute(
+                """
+                insert into market_meta.market_meta.instrument_master values
+                ('sz000899', 'stock', 'SZ', 'Ganneng', '2020-01-01', null, 'run-1', 'v1', 'r1', 'hash-1')
+                """
+            )
+            con.close()
+
+            report = build_shortlist_malf_research_prep(
+                tdx_root=tdx_root,
+                offline_root=offline_root,
+                duckdb_root=duckdb_root,
+                sample_entries=[
+                    {
+                        "ts_code": "000899.SZ",
+                        "trade_date": "2026-03-30",
+                        "sample_window_start": "2026-03-24",
+                        "sample_window_end": "2026-04-03",
+                        "research_priority_group": "backup",
+                        "formal_review_bucket": "near_limit_compare",
+                        "core_snapshot_focus": "near_limit_compare_backup",
+                        "selection_reason": "missing daily bars should block prep",
+                        "evidence_ref": "unit-test:000899-missing-daily",
+                    }
+                ],
+                generated_at="2026-06-29T22:10:00+08:00",
+            )
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertIn("missing_daily_window:000899.SZ", report["issues"])
+        self.assertEqual(report["sample_count"], 0)
+
     def test_build_shortlist_sample_package_materializes_pullback_pressure_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
