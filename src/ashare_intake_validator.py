@@ -875,6 +875,7 @@ def audit_first_batch_execution_constraint_snapshots(
     data_root: str | Path,
     plan_dir: str | Path,
     institution_fact_root: str | Path,
+    relation_evidence_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     feasibility_report = audit_first_batch_institution_feasibility_records(data_root, plan_dir)
     if feasibility_report["result"] != "pass":
@@ -905,6 +906,25 @@ def audit_first_batch_execution_constraint_snapshots(
             "institution_feasibility_records": feasibility_report,
         }
 
+    relation_evidence_index, relation_evidence_blocked_items = _price_limit_relation_evidence_index(
+        relation_evidence_dir
+    )
+    if relation_evidence_blocked_items:
+        return {
+            "result": "blocked",
+            "execution_constraint_snapshot_count": 0,
+            "execution_constraint_snapshots": [],
+            "execution_constraint_snapshot_blocked_count": len(relation_evidence_blocked_items),
+            "execution_constraint_snapshot_blocked_items": relation_evidence_blocked_items,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:review_price_limit_event_relation_evidence",
+            "issues": ["price_limit_event_relation_evidence_invalid"],
+            "institution_fact_package": fact_report,
+            "institution_feasibility_records": feasibility_report,
+        }
+
     fact_rows = _institution_fact_rows(Path(institution_fact_root))
     snapshots: list[dict[str, Any]] = []
     for record in feasibility_report.get("institution_feasibility_records", []):
@@ -914,7 +934,19 @@ def audit_first_batch_execution_constraint_snapshots(
                 continue
             if planned_date and fact.get("trade_date") != planned_date:
                 continue
-            snapshots.append(_execution_constraint_snapshot(record, fact))
+            relation_key = (
+                str(record.get("ashare_sample_id")),
+                str(fact.get("ts_code")),
+                str(fact.get("trade_date")),
+                str(record.get("planned_event") or record.get("execution_event_type") or ""),
+            )
+            snapshots.append(
+                _execution_constraint_snapshot(
+                    record,
+                    fact,
+                    relation_evidence_index.get(relation_key),
+                )
+            )
 
     result = "pass" if snapshots else "blocked"
     return {
@@ -937,8 +969,14 @@ def audit_first_batch_execution_feasibility_gate(
     data_root: str | Path,
     plan_dir: str | Path,
     institution_fact_root: str | Path,
+    relation_evidence_dir: str | Path | None = None,
 ) -> dict[str, Any]:
-    snapshot_report = audit_first_batch_execution_constraint_snapshots(data_root, plan_dir, institution_fact_root)
+    snapshot_report = audit_first_batch_execution_constraint_snapshots(
+        data_root,
+        plan_dir,
+        institution_fact_root,
+        relation_evidence_dir,
+    )
     if snapshot_report["result"] != "pass":
         return {
             "result": "blocked",
@@ -982,8 +1020,14 @@ def audit_first_batch_execution_feasibility_verdicts(
     data_root: str | Path,
     plan_dir: str | Path,
     institution_fact_root: str | Path,
+    relation_evidence_dir: str | Path | None = None,
 ) -> dict[str, Any]:
-    gate_report = audit_first_batch_execution_feasibility_gate(data_root, plan_dir, institution_fact_root)
+    gate_report = audit_first_batch_execution_feasibility_gate(
+        data_root,
+        plan_dir,
+        institution_fact_root,
+        relation_evidence_dir,
+    )
     if gate_report["result"] != "pass":
         return {
             "result": "blocked",
@@ -1075,8 +1119,14 @@ def audit_first_batch_execution_feasibility_verdict_merge(
     plan_dir: str | Path,
     institution_fact_root: str | Path,
     review_dir: str | Path,
+    relation_evidence_dir: str | Path | None = None,
 ) -> dict[str, Any]:
-    draft_report = audit_first_batch_execution_feasibility_verdicts(data_root, plan_dir, institution_fact_root)
+    draft_report = audit_first_batch_execution_feasibility_verdicts(
+        data_root,
+        plan_dir,
+        institution_fact_root,
+        relation_evidence_dir,
+    )
     if draft_report["result"] != "pass":
         return {
             "result": "blocked",
@@ -1150,12 +1200,14 @@ def audit_first_batch_execution_feasibility_outcomes(
     plan_dir: str | Path,
     institution_fact_root: str | Path,
     verdict_dir: str | Path,
+    relation_evidence_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     merge_report = audit_first_batch_execution_feasibility_verdict_merge(
         data_root,
         plan_dir,
         institution_fact_root,
         verdict_dir,
+        relation_evidence_dir,
     )
     if merge_report["result"] != "pass":
         return {
@@ -1210,12 +1262,14 @@ def audit_first_batch_execution_policy_candidates(
     plan_dir: str | Path,
     institution_fact_root: str | Path,
     verdict_dir: str | Path,
+    relation_evidence_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     outcome_report = audit_first_batch_execution_feasibility_outcomes(
         data_root,
         plan_dir,
         institution_fact_root,
         verdict_dir,
+        relation_evidence_dir,
     )
     if outcome_report["result"] != "pass":
         return {
@@ -1932,12 +1986,16 @@ def _planned_event_date_from_feasibility(record: dict[str, Any], feasibility_rep
     return None
 
 
-def _execution_constraint_snapshot(record: dict[str, Any], fact: dict[str, str]) -> dict[str, Any]:
+def _execution_constraint_snapshot(
+    record: dict[str, Any],
+    fact: dict[str, str],
+    relation_evidence: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     ts_code = fact.get("ts_code")
     trade_date = fact.get("trade_date")
     constraint_ref = f"ASHARE-CONSTRAINT-{ts_code}-{trade_date}-v0.1"
     price_limit_event_evidence = _price_limit_event_evidence(record, fact)
-    price_limit_event_relation = _price_limit_event_relation(record, fact)
+    price_limit_event_relation = _price_limit_event_relation(record, fact, relation_evidence)
     boundary_warning = [
         "constraint_snapshot_is_fact_reference_not_execution_rule",
         "do_not_infer_executability_from_constraint_snapshot",
@@ -2653,7 +2711,11 @@ def _price_limit_event_evidence(record: dict[str, Any], fact: dict[str, Any]) ->
     }
 
 
-def _price_limit_event_relation(record: dict[str, Any], fact: dict[str, Any]) -> dict[str, Any]:
+def _price_limit_event_relation(
+    record: dict[str, Any],
+    fact: dict[str, Any],
+    relation_evidence: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     planned_event = str(record.get("planned_event") or record.get("execution_event_type") or "")
     evidence_ref = _list_value(fact.get("source_ref"))
     is_suspended = fact.get("is_suspended") == "true"
@@ -2684,6 +2746,20 @@ def _price_limit_event_relation(record: dict[str, Any], fact: dict[str, Any]) ->
             "limit_proximity": "not_applicable",
             "reason": ["planned_event_has_no_explicit_price_limit_blocking_fact"],
             "evidence_ref": evidence_ref,
+        }
+
+    if relation_evidence is not None:
+        return {
+            "status": relation_evidence["price_limit_event_relation_status"],
+            "fill_blocking_status": relation_evidence["price_limit_event_fill_blocking_status"],
+            "limit_proximity": relation_evidence["price_limit_event_limit_proximity"],
+            "reason": _list_value(relation_evidence.get("price_limit_event_relation_reason")),
+            "evidence_ref": _unique_preserve_order(
+                [
+                    *evidence_ref,
+                    *_list_value(relation_evidence.get("price_limit_event_relation_ref")),
+                ]
+            ),
         }
 
     if planned_event == "add_on":
@@ -3511,6 +3587,94 @@ def _read_json_object(path: Path) -> dict[str, Any] | None:
     return payload
 
 
+def _price_limit_relation_evidence_index(
+    relation_evidence_dir: str | Path | None,
+) -> tuple[dict[tuple[str, str, str, str], dict[str, Any]], list[dict[str, Any]]]:
+    if relation_evidence_dir is None:
+        return {}, []
+    evidence_dir = Path(relation_evidence_dir)
+    if not evidence_dir.exists():
+        return {}, [
+            {
+                "issues": ["price_limit_event_relation_evidence_dir_missing"],
+                "next_action": "action:review_price_limit_event_relation_evidence",
+                "path": str(evidence_dir),
+            }
+        ]
+
+    index: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    blocked_items: list[dict[str, Any]] = []
+    for path in sorted(evidence_dir.glob("*.json")):
+        payload = _read_json_object(path)
+        if payload is None:
+            blocked_items.append(
+                {
+                    "issues": [f"invalid_price_limit_event_relation_evidence_json:{path.name}"],
+                    "next_action": "action:review_price_limit_event_relation_evidence",
+                    "path": str(path),
+                }
+            )
+            continue
+        issues = _price_limit_relation_evidence_issues(path, payload)
+        if issues:
+            blocked_items.append(
+                {
+                    "ashare_sample_id": payload.get("ashare_sample_id"),
+                    "ts_code": payload.get("ts_code"),
+                    "issues": issues,
+                    "next_action": "action:review_price_limit_event_relation_evidence",
+                    "path": str(path),
+                }
+            )
+            continue
+        key = (
+            str(payload["ashare_sample_id"]),
+            str(payload["ts_code"]),
+            str(payload["trade_date"]),
+            str(payload["planned_event"]),
+        )
+        index[key] = payload
+    return index, blocked_items
+
+
+def _price_limit_relation_evidence_issues(path: Path, payload: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+    required_fields = [
+        "record_type",
+        "schema_version",
+        "ashare_sample_id",
+        "ts_code",
+        "trade_date",
+        "planned_event",
+        "price_limit_event_relation_status",
+        "price_limit_event_fill_blocking_status",
+        "price_limit_event_limit_proximity",
+        "price_limit_event_relation_reason",
+        "price_limit_event_relation_ref",
+    ]
+    for field in required_fields:
+        if field not in payload:
+            issues.append(f"price_limit_event_relation_evidence_missing_field:{field}")
+    if issues:
+        return issues
+    if payload.get("record_type") != "ASharePriceLimitEventRelationEvidence":
+        issues.append(f"invalid_price_limit_event_relation_evidence_record_type:{path.name}")
+    relation_status = str(payload.get("price_limit_event_relation_status"))
+    if relation_status not in PRICE_LIMIT_EVENT_RELATION_STATUSES:
+        issues.append("invalid_price_limit_event_relation_evidence_enum:price_limit_event_relation_status")
+    fill_status = str(payload.get("price_limit_event_fill_blocking_status"))
+    if fill_status not in PRICE_LIMIT_EVENT_FILL_BLOCKING_STATUSES:
+        issues.append("invalid_price_limit_event_relation_evidence_enum:price_limit_event_fill_blocking_status")
+    proximity = str(payload.get("price_limit_event_limit_proximity"))
+    if proximity not in PRICE_LIMIT_EVENT_LIMIT_PROXIMITY_STATUSES:
+        issues.append("invalid_price_limit_event_relation_evidence_enum:price_limit_event_limit_proximity")
+    if not isinstance(payload.get("price_limit_event_relation_reason"), list):
+        issues.append("invalid_price_limit_event_relation_evidence_list:price_limit_event_relation_reason")
+    if not isinstance(payload.get("price_limit_event_relation_ref"), list):
+        issues.append("invalid_price_limit_event_relation_evidence_list:price_limit_event_relation_ref")
+    return issues
+
+
 def _read_ready_snapshot_codes(snapshot_dir: Path) -> set[str]:
     codes: set[str] = set()
     for snapshot_file in snapshot_dir.glob("*.json"):
@@ -3643,6 +3807,10 @@ def main(argv: list[str] | None = None) -> int:
         "--institution-fact-root",
         help="Institution fact package root for execution constraint snapshot drafts; defaults to --root.",
     )
+    parser.add_argument(
+        "--price-limit-event-relation-dir",
+        help="Optional reviewed planned-event price-limit relation evidence directory.",
+    )
     args = parser.parse_args(argv)
 
     if args.audit_first_batch_execution_policy_research_prep:
@@ -3736,6 +3904,7 @@ def main(argv: list[str] | None = None) -> int:
             args.method_pm_plan_dir,
             fact_root,
             args.audit_first_batch_execution_policy_candidates,
+            args.price_limit_event_relation_dir,
         )
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0 if report["result"] == "pass" else 1

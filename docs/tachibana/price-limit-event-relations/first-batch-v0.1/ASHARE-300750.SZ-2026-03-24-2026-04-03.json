@@ -1,0 +1,26 @@
+{
+  "record_type": "ASharePriceLimitEventRelationEvidence",
+  "schema_version": "v0.1",
+  "ashare_sample_id": "ASHARE-300750.SZ-2026-03-24-2026-04-03",
+  "ts_code": "300750.SZ",
+  "trade_date": "2026-04-03",
+  "planned_event": "add_on",
+  "method_action": "pullback_add",
+  "price_limit_event_relation_status": "relation_constrained",
+  "price_limit_event_fill_blocking_status": "fill_blocking_unknown",
+  "price_limit_event_limit_proximity": "not_near_limit",
+  "price_limit_event_relation_reason": [
+    "planned_event_intraday_range_far_from_limit_bounds",
+    "planned_event_not_near_limit_supported_by_reviewed_lc5_evidence"
+  ],
+  "price_limit_event_relation_ref": [
+    "Z:\\new_tdx64\\vipdoc\\sz\\fzline\\sz300750.lc5",
+    "docs/tachibana/index/Tachibana-A股-300750.SZ-add_on-price_limit-proximity-evidence-review-v0.1.md",
+    "docs/tachibana/index/Tachibana-A股-300750.SZ-add_on-not_near_limit-收口草案-v0.1.md"
+  ],
+  "boundary_warning": [
+    "relation_evidence_is_research_input_not_execution_rule",
+    "do_not_emit_signal_from_relation_evidence",
+    "do_not_infer_trade_accept_from_relation_evidence"
+  ]
+}

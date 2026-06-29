@@ -164,6 +164,53 @@ def write_execution_policy_case(
     return plan_dir, fact_root, review_dir
 
 
+def write_price_limit_relation_evidence(
+    relation_root: Path,
+    *,
+    sample_id: str,
+    ts_code: str,
+    trade_date: str = "2026-01-06",
+    planned_event: str = "add_on",
+    method_action: str = "pullback_add",
+    relation_status: str = "relation_constrained",
+    fill_blocking_status: str = "fill_blocking_unknown",
+    limit_proximity: str = "not_near_limit",
+) -> Path:
+    relation_root.mkdir(parents=True, exist_ok=True)
+    path = relation_root / f"{sample_id}.json"
+    path.write_text(
+        json.dumps(
+            {
+                "record_type": "ASharePriceLimitEventRelationEvidence",
+                "schema_version": "v0.1",
+                "ashare_sample_id": sample_id,
+                "ts_code": ts_code,
+                "trade_date": trade_date,
+                "planned_event": planned_event,
+                "method_action": method_action,
+                "price_limit_event_relation_status": relation_status,
+                "price_limit_event_fill_blocking_status": fill_blocking_status,
+                "price_limit_event_limit_proximity": limit_proximity,
+                "price_limit_event_relation_reason": [
+                    "planned_event_intraday_range_far_from_limit_bounds",
+                    "planned_event_not_near_limit_supported_by_reviewed_lc5_evidence",
+                ],
+                "price_limit_event_relation_ref": [
+                    "unit-test:reviewed-lc5-evidence",
+                    "unit-test:not-near-limit-review",
+                ],
+                "boundary_warning": [
+                    "relation_evidence_is_research_input_not_execution_rule",
+                    "do_not_emit_signal_from_relation_evidence",
+                    "do_not_infer_trade_accept_from_relation_evidence",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 def write_execution_policy_review_file(
     review_root: Path,
     *,
@@ -2523,6 +2570,151 @@ class AShareIntakeValidatorTest(unittest.TestCase):
                 "planned_event_requires_higher_price_limit_resolution",
             ],
         )
+
+    def test_execution_policy_candidates_use_reviewed_not_near_limit_relation_evidence(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, review_dir = write_execution_policy_case(
+                tmp_path,
+                execution_event_type="add_on",
+                method_action="pullback_add",
+                pm_action="add_on",
+                feasibility_status="constrained",
+                verdict_reason=["manual_constraint_confirmed"],
+                blocked_reason=["limit_state_unknown_on_planned_event"],
+            )
+            relation_dir = tmp_path / "price-limit-event-relations"
+            write_price_limit_relation_evidence(
+                relation_dir,
+                sample_id="ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                ts_code="000001.SZ",
+            )
+
+            report = audit_first_batch_execution_policy_candidates(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_dir,
+                relation_dir,
+            )
+
+        candidates = {
+            item["candidate_constraint_type"]: item
+            for item in report["execution_policy_candidates"]
+        }
+        price_limit = candidates["price_limit"]
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(price_limit["candidate_status"], "review_required")
+        self.assertEqual(price_limit["price_limit_event_relation_status"], "relation_constrained")
+        self.assertEqual(
+            price_limit["price_limit_event_fill_blocking_status"],
+            "fill_blocking_unknown",
+        )
+        self.assertEqual(
+            price_limit["price_limit_event_limit_proximity"],
+            "not_near_limit",
+        )
+        self.assertEqual(
+            price_limit["price_limit_event_relation_reason"],
+            [
+                "planned_event_intraday_range_far_from_limit_bounds",
+                "planned_event_not_near_limit_supported_by_reviewed_lc5_evidence",
+            ],
+        )
+        self.assertIn(
+            "unit-test:reviewed-lc5-evidence",
+            price_limit["price_limit_event_relation_ref"],
+        )
+
+    def test_execution_policy_candidates_block_invalid_relation_evidence_enum(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, review_dir = write_execution_policy_case(
+                tmp_path,
+                execution_event_type="add_on",
+                method_action="pullback_add",
+                pm_action="add_on",
+                feasibility_status="constrained",
+                verdict_reason=["manual_constraint_confirmed"],
+                blocked_reason=["limit_state_unknown_on_planned_event"],
+            )
+            relation_dir = tmp_path / "price-limit-event-relations"
+            write_price_limit_relation_evidence(
+                relation_dir,
+                sample_id="ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                ts_code="000001.SZ",
+                limit_proximity="unsupported_value",
+            )
+
+            report = audit_first_batch_execution_policy_candidates(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_dir,
+                relation_dir,
+            )
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertEqual(report["execution_policy_candidate_count"], 0)
+        self.assertEqual(
+            report["next_action"],
+            "action:review_price_limit_event_relation_evidence",
+        )
+        self.assertIn("price_limit_event_relation_evidence_invalid", report["issues"])
+        blocked_items = report["execution_feasibility_outcomes_report"][
+            "execution_feasibility_verdict_merge"
+        ]["execution_feasibility_verdict_drafts"]["execution_feasibility_gate"][
+            "execution_constraint_snapshots"
+        ]["execution_constraint_snapshot_blocked_items"]
+        self.assertEqual(
+            blocked_items[0]["issues"],
+            ["invalid_price_limit_event_relation_evidence_enum:price_limit_event_limit_proximity"],
+        )
+
+    def test_reviewed_relation_evidence_keeps_trading_fields_disabled(self) -> None:
+        fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            plan_dir, fact_root, review_dir = write_execution_policy_case(
+                tmp_path,
+                execution_event_type="add_on",
+                method_action="pullback_add",
+                pm_action="add_on",
+                feasibility_status="constrained",
+                verdict_reason=["manual_constraint_confirmed"],
+                blocked_reason=["limit_state_unknown_on_planned_event"],
+            )
+            relation_dir = tmp_path / "price-limit-event-relations"
+            write_price_limit_relation_evidence(
+                relation_dir,
+                sample_id="ASHARE-000001.SZ-2026-01-05-2026-01-06",
+                ts_code="000001.SZ",
+            )
+
+            report = audit_first_batch_execution_policy_candidates(
+                fixture_root,
+                plan_dir,
+                fact_root,
+                review_dir,
+                relation_dir,
+            )
+
+        self.assertFalse(report["institution_rule_definition_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+        for candidate in report["execution_policy_candidates"]:
+            self.assertFalse(candidate["institution_rule_definition_allowed"])
+            self.assertFalse(candidate["signal_generation_allowed"])
+            self.assertFalse(candidate["backtest_execution_allowed"])
+            for forbidden_field in [
+                "trade_accept",
+                "position_size",
+                "limit_up_strategy",
+                "limit_down_strategy",
+            ]:
+                self.assertNotIn(forbidden_field, candidate)
 
     def test_execution_policy_candidates_keep_price_limit_evidence_incomplete_when_bounds_missing(self) -> None:
         fixture_root = ROOT / "tests" / "fixtures" / "ashare-intake-ready"
