@@ -121,6 +121,7 @@ def read_daily_bars(
 
 def read_sector_membership(
     offline_root: str | Path,
+    tdx_root: str | Path | None = None,
     duckdb_root: str | Path | None = None,
     limit_files: int = 200,
 ) -> dict[str, Any]:
@@ -128,6 +129,10 @@ def read_sector_membership(
     if duckdb_root is not None:
         report = _read_sector_membership_from_duckdb(Path(duckdb_root), limit_files)
         if report.get("result") == "pass":
+            return report
+    if tdx_root is not None:
+        report = _read_sector_membership_from_tdx_hq_cache(Path(tdx_root), limit_files)
+        if report.get("result") != "blocked":
             return report
     candidates: list[Path] = []
     block_root = root / "block"
@@ -162,7 +167,7 @@ def build_minimal_read_report(
     symbols = read_symbol_master(tdx_root, offline_root, duckdb_root=duckdb_root, limit=200)
     calendar = read_trading_calendar(tdx_root, offline_root, duckdb_root=duckdb_root, limit_files=200)
     sample_daily = _sample_daily_bars(offline_root, symbols)
-    sector = read_sector_membership(offline_root, duckdb_root=duckdb_root, limit_files=200)
+    sector = read_sector_membership(offline_root, tdx_root=tdx_root, duckdb_root=duckdb_root, limit_files=200)
     report = {
         "result": "pass" if symbols or calendar or sample_daily else "blocked",
         "symbol_master": {
@@ -575,6 +580,69 @@ def _read_sector_membership_from_duckdb(root: Path, limit_files: int) -> dict[st
         "sector_membership_inferred_from_index_bars": False,
         "formal_data_write_allowed": False,
     }
+
+
+def _read_sector_membership_from_tdx_hq_cache(tdx_root: Path, limit_files: int) -> dict[str, Any]:
+    hq_cache_root = tdx_root / "T0002" / "hq_cache"
+    hy_path = hq_cache_root / "tdxhy.cfg"
+    zs_path = hq_cache_root / "tdxzs.cfg"
+    zs3_path = hq_cache_root / "tdxzs3.cfg"
+    if not hy_path.exists() or not zs_path.exists():
+        return {"result": "blocked", "reason": "sector_membership_source_missing", "sector_membership": []}
+    level1_names = _read_tdx_sector_name_map(zs_path)
+    level12_names = _read_tdx_sector_name_map(zs3_path) if zs3_path.exists() else {}
+    rows = []
+    for raw_line in hy_path.read_text(encoding="gbk", errors="ignore").splitlines():
+        parts = raw_line.strip().split("|")
+        if len(parts) < 6:
+            continue
+        market_flag, code, level1_code, _unused1, _unused2, level12_code = parts[:6]
+        market = {"0": "SZ", "1": "SH", "2": "BJ"}.get(market_flag)
+        if market is None or not re.fullmatch(r"\d{6}", code):
+            continue
+        sector_code = level1_code or level12_code
+        sector_name = level1_names.get(level1_code) or level12_names.get(level12_code)
+        sector_level = "tdx_industry_l1" if level1_code else "tdx_industry_l12"
+        rows.append(
+            {
+                "ts_code": f"{code}.{market}",
+                "sector_code": sector_code,
+                "sector_name": sector_name,
+                "sector_level": sector_level,
+                "valid_from": None,
+                "valid_to": None,
+                "time_alignment_status": "current_snapshot_only",
+                "source_ref": hy_path.as_posix(),
+            }
+        )
+        if len(rows) >= limit_files:
+            break
+    if not rows:
+        return {"result": "blocked", "reason": "sector_membership_source_missing", "sector_membership": []}
+    return {
+        "result": "source_review_required",
+        "reason": "tdx_current_sector_snapshot_without_history",
+        "selected_source": "tdx_hq_cache_sector_snapshot",
+        "sector_membership": rows,
+        "candidate_source_files": [path.as_posix() for path in [hy_path, zs_path, zs3_path] if path.exists()],
+        "sector_membership_inferred_from_index_bars": False,
+        "formal_data_write_allowed": False,
+    }
+
+
+def _read_tdx_sector_name_map(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    mapping: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="gbk", errors="ignore").splitlines():
+        parts = raw_line.strip().split("|")
+        if len(parts) < 6:
+            continue
+        name = parts[0].strip()
+        code = parts[5].strip()
+        if name and code:
+            mapping[code] = name
+    return mapping
 
 
 def _strip_forbidden_fields(value: Any) -> Any:
