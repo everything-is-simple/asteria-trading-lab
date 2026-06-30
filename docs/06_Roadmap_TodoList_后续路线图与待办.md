@@ -1,8 +1,8 @@
 # 06_Roadmap_TodoList — 后续路线图与待办
 
-**版本**: v0.6
+**版本**: v0.7
 **日期**: 2026-06-30
-**当前基线**: `candidate_table_staging_update_performed`
+**当前基线**: `formal_candidate_table_update_performed`
 **文档性质**: 未来待办、路线图与优先级安排
 
 ## 1. 当前基线
@@ -16,8 +16,8 @@
 - 已生成 candidate table update audit package。
 - 已生成 staging qualification record manifest 与 records。
 - 已生成 staging candidate table draft JSONL 与 manifest。
-- 尚未真实更新正式 `data_root` candidate table。
-- 尚未写入正式 `data_root`。
+- 已实现 P4c formal data root candidate table 写入入口，并在临时 formal data root 验证 backup 与 rollback。
+- 真实生产路径 `Z:\asteria-trading-labs-data` 尚未执行人工确认写入。
 - 尚未开放 trading layer。
 - 尚未开放 signal generation 或 backtest execution。
 
@@ -126,15 +126,19 @@ undercovered_rhythm_meanings`，防止后续样本目录退化为只覆盖理由
 - [x] 设计真实持久化写入入口。
 - [x] 设计 candidate table 更新入口。
 - [x] 先在临时目录验证真实文件 IO。
-- [x] 再讨论是否写入正式 `data_root`（P4c 设计规格已完成，实现待确认）。
+- [x] 再讨论是否写入正式 `data_root`（P4c 设计规格已完成）。
+- [x] 实现 explicit formal data root candidate table writer，并用临时 formal data root 验证 backup / rollback。
 
-P4c 设计决策（已拍板，待实现）：
+P4c 已完成项：
 
+- 入口：`write_candidate_table_to_formal_data_root_when_explicitly_confirmed`
 - 正式路径：`Z:\asteria-trading-labs-data\ashare\candidate-table-v0.1\candidate-table.jsonl` + `manifest.json`
 - 格式：JSONL
 - 人工 gate：`confirm_formal_write=True` 必须显式传入；否则立即 block
 - Rollback：完整回滚，不留残件；旧正式目录写入前自动备份到 `candidate-table-v0.1.backup.<ISO8601>/`
 - Trading layer：P4c 完成后仍关闭；另走 P5 独立审计才能开放
+- 验证：`tests.test_tdx_local_first_batch` 覆盖 pass / blocked-no-confirm / blocked-bad-manifest / forbidden-field / rollback。
+- 边界：本轮未对真实生产路径 `Z:\asteria-trading-labs-data` 执行人工确认写入。
 
 P4a 已完成项：
 
@@ -161,9 +165,13 @@ P4b 已完成设计：
 
 - P3 制度研究准备层已收口。
 - P4 持久化与候选表写入路径已稳定。
+- P4c formal candidate table writer 已完成；trading layer 仍需独立审计后才能读取。
 
 待办：
 
+- [ ] 设计 `audit_trading_layer_readiness_for_candidate_table_when_explicitly_requested`。
+- [ ] 审计 formal candidate table manifest 与 JSONL 内容。
+- [ ] 确认 institution rule definition readiness 仍未开放时，继续 block trading layer read。
 - [ ] 起草涨跌停规则草案。
 - [ ] 起草停复牌规则草案。
 - [ ] 起草 T+1 相关约束草案。

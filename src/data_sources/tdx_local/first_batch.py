@@ -1718,6 +1718,110 @@ def update_candidate_table_from_staged_qualification_records_when_explicitly_req
     )
 
 
+def write_candidate_table_to_formal_data_root_when_explicitly_confirmed(
+    candidate_table_staging_manifest_path: str | Path,
+    formal_data_root: str | Path,
+    confirm_formal_write: bool = False,
+    generated_at: str | None = None,
+    simulate_failure_step: str | None = None,
+) -> dict[str, Any]:
+    generated_at_value = generated_at or datetime.now().astimezone().isoformat(timespec="seconds")
+    if confirm_formal_write is not True:
+        return _candidate_table_formal_blocked_report(generated_at_value, ["confirm_formal_write_required"])
+
+    manifest_path = Path(candidate_table_staging_manifest_path)
+    issues: list[str] = []
+    manifest = _read_json_file(manifest_path)
+    if manifest is None:
+        issues.append("candidate_table_staging_manifest_unreadable")
+        return _candidate_table_formal_blocked_report(generated_at_value, issues)
+
+    _validate_candidate_table_staging_manifest(manifest, issues)
+    draft_files = manifest.get("candidate_table_files", [])
+    if not isinstance(draft_files, list) or "candidate-table-draft.jsonl" not in draft_files:
+        issues.append("candidate_table_staging_manifest_draft_file_missing")
+    draft_file = manifest_path.parent / "candidate-table-draft.jsonl"
+    rows = _read_candidate_table_jsonl(draft_file)
+    if rows is None:
+        issues.append("candidate_table_staging_draft_unreadable")
+        rows = []
+    if not rows:
+        issues.append("candidate_table_staging_draft_empty")
+
+    formal_rows: list[dict[str, Any]] = []
+    for row in rows:
+        forbidden_field = _first_forbidden_output_field_present(row)
+        if forbidden_field is not None:
+            issues.append("candidate_table_formal_forbidden_output_field_present")
+            continue
+        formal_rows.append(_candidate_table_formal_row(row, manifest, generated_at_value))
+
+    if issues:
+        return _candidate_table_formal_blocked_report(generated_at_value, issues)
+
+    data_root = Path(formal_data_root)
+    ashare_root = data_root / "ashare"
+    table_root = ashare_root / "candidate-table-v0.1"
+    tmp_root = ashare_root / "candidate-table-v0.1.__tmp__"
+    backup_path: Path | None = None
+
+    try:
+        backup_path = _backup_existing_candidate_table_dir(table_root, generated_at_value)
+        if simulate_failure_step == "after_backup":
+            raise RuntimeError("candidate_table_formal_write_failed_after_backup")
+
+        if tmp_root.exists():
+            shutil.rmtree(tmp_root)
+        tmp_root.mkdir(parents=True)
+        _write_jsonl(tmp_root / "candidate-table.jsonl", formal_rows)
+        manifest_payload = _candidate_table_formal_manifest(
+            manifest,
+            formal_rows,
+            generated_at_value,
+            str(backup_path) if backup_path is not None else None,
+        )
+        _write_json_atomic(tmp_root / "manifest.json", manifest_payload)
+        _replace_candidate_table_dir(tmp_root, table_root)
+    except Exception as exc:
+        if tmp_root.exists():
+            shutil.rmtree(tmp_root)
+        if backup_path is not None and backup_path.exists() and not table_root.exists():
+            shutil.copytree(backup_path, table_root)
+        issue = str(exc) or exc.__class__.__name__
+        if issue not in {"candidate_table_formal_write_failed_after_backup"}:
+            issue = f"candidate_table_formal_write_failed:{issue}"
+        return _candidate_table_formal_blocked_report(
+            generated_at_value,
+            [issue],
+            str(backup_path) if backup_path is not None else None,
+        )
+
+    return _strip_forbidden_fields(
+        {
+            "result": "pass",
+            "generated_at": generated_at_value,
+            "research_only": True,
+            "package_id": "candidate_table_formal_write_v0.1",
+            "source_staging_manifest_id": manifest.get("manifest_id"),
+            "source_qualification_record_staging_manifest_id": manifest.get("source_qualification_record_manifest_id"),
+            "formal_candidate_table_path": str(table_root / "candidate-table.jsonl"),
+            "formal_candidate_table_manifest_path": str(table_root / "manifest.json"),
+            "backup_path": str(backup_path) if backup_path is not None else None,
+            "candidate_table_row_count": len(formal_rows),
+            "candidate_table_update_performed": True,
+            "candidate_table_update_target": "formal_data_root",
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:review_formal_candidate_table_before_trading_layer_audit",
+        }
+    )
+
+
 def materialize_default_add_on_price_limit_core_malf_research_bundle(
     data_root: str | Path,
     tdx_root: str | Path,
@@ -3600,6 +3704,150 @@ def _candidate_table_staging_blocked_report(
             "next_action": "action:repair_staged_candidate_table_update_inputs",
         }
     )
+
+
+def _validate_candidate_table_staging_manifest(manifest: dict[str, Any], issues: list[str]) -> None:
+    if manifest.get("manifest_id") != "candidate_table_staging_manifest_v0.1":
+        issues.append("candidate_table_staging_manifest_invalid")
+    if manifest.get("candidate_table_update_performed") is not True:
+        issues.append("candidate_table_staging_manifest_update_not_performed")
+    if manifest.get("candidate_table_update_target") != "staging":
+        issues.append("candidate_table_staging_manifest_target_not_staging")
+    if manifest.get("candidate_table_update_allowed") is not False:
+        issues.append("candidate_table_staging_manifest_candidate_table_update_allowed")
+    if not manifest.get("source_qualification_record_manifest_id"):
+        issues.append("candidate_table_staging_manifest_qualification_record_provenance_missing")
+    for field in ["trading_layer_read_allowed", "signal_generation_allowed", "backtest_execution_allowed"]:
+        if manifest.get(field) is not False:
+            issues.append(f"candidate_table_staging_manifest_{field}_must_be_false")
+
+
+def _candidate_table_formal_row(
+    row: dict[str, Any],
+    manifest: dict[str, Any],
+    generated_at: str,
+) -> dict[str, Any]:
+    formal_row = dict(row)
+    boundary_warning = list(formal_row.get("boundary_warning", []))
+    for item in [
+        "candidate_table_formal_data_root_write_does_not_open_trading_layer",
+        "trading_layer_read_requires_separate_p5_audit",
+        "do_not_generate_trade_from_candidate_table",
+    ]:
+        if item not in boundary_warning:
+            boundary_warning.append(item)
+
+    formal_row.update(
+        {
+            "candidate_table_row_status": "formal_candidate_table_row",
+            "source_staging_manifest_id": manifest.get("manifest_id"),
+            "source_qualification_record_staging_manifest_id": manifest.get("source_qualification_record_manifest_id"),
+            "candidate_table_updated_at": generated_at,
+            "candidate_table_update_performed": True,
+            "candidate_table_update_target": "formal_data_root",
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "boundary_warning": boundary_warning,
+            "next_action": "action:review_formal_candidate_table_before_trading_layer_audit",
+        }
+    )
+    return _strip_forbidden_fields(formal_row)
+
+
+def _candidate_table_formal_manifest(
+    staging_manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+    generated_at: str,
+    backup_path: str | None,
+) -> dict[str, Any]:
+    return _strip_forbidden_fields(
+        {
+            "manifest_id": "candidate_table_formal_manifest_v0.1",
+            "generated_at": generated_at,
+            "source_staging_manifest_id": staging_manifest.get("manifest_id"),
+            "source_qualification_record_staging_manifest_id": staging_manifest.get(
+                "source_qualification_record_manifest_id"
+            ),
+            "candidate_table_row_count": len(rows),
+            "candidate_table_file": "candidate-table.jsonl",
+            "backup_path": backup_path,
+            "candidate_table_update_performed": True,
+            "candidate_table_update_target": "formal_data_root",
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:review_formal_candidate_table_before_trading_layer_audit",
+        }
+    )
+
+
+def _candidate_table_formal_blocked_report(
+    generated_at: str,
+    issues: list[str],
+    backup_path: str | None = None,
+) -> dict[str, Any]:
+    if not issues:
+        issues = ["candidate_table_formal_write_blocked"]
+    return _strip_forbidden_fields(
+        {
+            "result": "blocked",
+            "generated_at": generated_at,
+            "research_only": True,
+            "package_id": "candidate_table_formal_write_v0.1",
+            "issues": issues,
+            "backup_path": backup_path,
+            "candidate_table_row_count": 0,
+            "candidate_table_update_performed": False,
+            "candidate_table_update_target": "formal_data_root",
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:repair_formal_candidate_table_write_inputs",
+        }
+    )
+
+
+def _backup_existing_candidate_table_dir(table_root: Path, generated_at: str) -> Path | None:
+    if not table_root.exists():
+        return None
+    backup_suffix = generated_at.replace(":", "").replace("+", "").replace("-", "").replace("T", "-")
+    backup_path = table_root.with_name(f"{table_root.name}.backup.{backup_suffix}")
+    if backup_path.exists():
+        shutil.rmtree(backup_path)
+    shutil.copytree(table_root, backup_path)
+    return backup_path
+
+
+def _replace_candidate_table_dir(tmp_root: Path, table_root: Path) -> None:
+    side_root = table_root.with_name(f"{table_root.name}.__old__")
+    if side_root.exists():
+        shutil.rmtree(side_root)
+    table_root.parent.mkdir(parents=True, exist_ok=True)
+    moved_live = False
+    if table_root.exists():
+        table_root.rename(side_root)
+        moved_live = True
+    try:
+        tmp_root.rename(table_root)
+    except Exception:
+        if moved_live and side_root.exists() and not table_root.exists():
+            side_root.rename(table_root)
+        raise
+    if side_root.exists():
+        shutil.rmtree(side_root)
 
 
 def _reviewed_snapshot_candidate(candidate: dict[str, Any], verdict: dict[str, Any], generated_at: str) -> dict[str, Any] | None:

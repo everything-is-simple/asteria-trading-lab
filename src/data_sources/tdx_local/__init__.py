@@ -21,6 +21,7 @@ from .first_batch import (
     review_add_on_price_limit_post_label_intraday_reopen,
     rescreen_add_on_price_limit_post_industry_window,
     update_candidate_table_from_staged_qualification_records_when_explicitly_requested,
+    write_candidate_table_to_formal_data_root_when_explicitly_confirmed,
     write_qualification_records_to_staging_when_explicitly_requested,
 )
 from .readers import (
@@ -64,6 +65,7 @@ __all__ = [
     "review_add_on_price_limit_post_label_intraday_reopen",
     "rescreen_add_on_price_limit_post_industry_window",
     "update_candidate_table_from_staged_qualification_records_when_explicitly_requested",
+    "write_candidate_table_to_formal_data_root_when_explicitly_confirmed",
     "write_qualification_records_to_staging_when_explicitly_requested",
     "build_minimal_institution_fact_package",
     "build_minimal_read_report",

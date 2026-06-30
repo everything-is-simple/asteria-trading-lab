@@ -39,6 +39,7 @@ from data_sources.tdx_local import (
     build_shortlist_sample_package,
     default_add_on_price_limit_shortlist_sample_entries,
     update_candidate_table_from_staged_qualification_records_when_explicitly_requested,
+    write_candidate_table_to_formal_data_root_when_explicitly_confirmed,
     write_qualification_records_to_staging_when_explicitly_requested,
 )
 from tachibana_front_filter import run_front_filter
@@ -100,6 +101,16 @@ class TdxLocalFirstBatchTest(unittest.TestCase):
             generated_at="2026-06-30T21:00:00+08:00",
         )
         return staging_root / "qualification-records-v0.1" / "manifest.json"
+
+    def _write_single_staged_candidate_table(self, root: Path) -> Path:
+        qualification_manifest = self._write_single_staged_qualification_record(root / "qualification-staging")
+        report = update_candidate_table_from_staged_qualification_records_when_explicitly_requested(
+            qualification_record_staging_manifest_path=qualification_manifest,
+            candidate_table_staging_root=root / "candidate-staging",
+            generated_at="2026-06-30T23:00:00+08:00",
+        )
+        self.assertEqual(report["result"], "pass")
+        return root / "candidate-staging" / "candidate-table-v0.1" / "manifest.json"
 
     def test_default_add_on_price_limit_shortlist_sample_entries_keeps_core_four_and_backup_two_split(self) -> None:
         entries = default_add_on_price_limit_shortlist_sample_entries()
@@ -2110,6 +2121,157 @@ class TdxLocalFirstBatchTest(unittest.TestCase):
         self.assertFalse(second_report["candidate_table_update_performed"])
         self.assertIn("candidate_table_merge_conflict", second_report["issues"])
         self.assertEqual(rows_after[0]["qualification_rule_id"], "Q-CONFLICT")
+
+    def test_write_candidate_table_to_formal_data_root_when_explicitly_confirmed_writes_formal_jsonl_with_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            staging_manifest = self._write_single_staged_candidate_table(root / "staging")
+            formal_data_root = root / "formal-data"
+            live_root = formal_data_root / "ashare" / "candidate-table-v0.1"
+            live_root.mkdir(parents=True)
+            (live_root / "candidate-table.jsonl").write_text('{"old": true}\n', encoding="utf-8")
+            (live_root / "manifest.json").write_text('{"manifest_id": "old"}\n', encoding="utf-8")
+
+            report = write_candidate_table_to_formal_data_root_when_explicitly_confirmed(
+                candidate_table_staging_manifest_path=staging_manifest,
+                formal_data_root=formal_data_root,
+                confirm_formal_write=True,
+                generated_at="2026-06-30T23:10:00+08:00",
+            )
+            manifest = json.loads((live_root / "manifest.json").read_text(encoding="utf-8"))
+            rows = [
+                json.loads(line)
+                for line in (live_root / "candidate-table.jsonl").read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            backups = list((formal_data_root / "ashare").glob("candidate-table-v0.1.backup.*"))
+            backup_file_exists = bool(backups) and (backups[0] / "candidate-table.jsonl").exists()
+            tmp_exists = (formal_data_root / "ashare" / "candidate-table-v0.1.__tmp__").exists()
+
+        self.assertEqual(report["result"], "pass")
+        self.assertTrue(report["candidate_table_update_performed"])
+        self.assertEqual(report["candidate_table_update_target"], "formal_data_root")
+        self.assertFalse(report["candidate_table_update_allowed"])
+        self.assertFalse(report["trading_layer_read_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+        self.assertEqual(report["next_action"], "action:review_formal_candidate_table_before_trading_layer_audit")
+        self.assertEqual(manifest["manifest_id"], "candidate_table_formal_manifest_v0.1")
+        self.assertEqual(manifest["candidate_table_row_count"], 1)
+        self.assertEqual(manifest["candidate_table_file"], "candidate-table.jsonl")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["candidate_table_update_target"], "formal_data_root")
+        self.assertTrue(rows[0]["candidate_table_update_performed"])
+        self.assertFalse(rows[0]["trading_layer_read_allowed"])
+        self.assertEqual(len(backups), 1)
+        self.assertTrue(backup_file_exists)
+        self.assertFalse(tmp_exists)
+        payload = json.dumps({"report": report, "manifest": manifest, "rows": rows}, ensure_ascii=False)
+        self.assertFalse(any(field in payload for field in FORBIDDEN_FIELDS))
+
+    def test_write_candidate_table_to_formal_data_root_when_explicitly_confirmed_blocks_without_confirm_before_reading_staging(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            missing_manifest = root / "missing" / "manifest.json"
+            formal_data_root = root / "formal-data"
+
+            report = write_candidate_table_to_formal_data_root_when_explicitly_confirmed(
+                candidate_table_staging_manifest_path=missing_manifest,
+                formal_data_root=formal_data_root,
+                confirm_formal_write=False,
+                generated_at="2026-06-30T23:15:00+08:00",
+            )
+
+            self.assertFalse((formal_data_root / "ashare").exists())
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertIn("confirm_formal_write_required", report["issues"])
+        self.assertFalse(report["candidate_table_update_performed"])
+        self.assertFalse(report["trading_layer_read_allowed"])
+
+    def test_write_candidate_table_to_formal_data_root_when_explicitly_confirmed_blocks_bad_manifest_without_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            staging_manifest = root / "candidate-staging" / "candidate-table-v0.1" / "manifest.json"
+            staging_manifest.parent.mkdir(parents=True)
+            staging_manifest.write_text(json.dumps({"manifest_id": "bad"}, ensure_ascii=False), encoding="utf-8")
+            formal_data_root = root / "formal-data"
+
+            report = write_candidate_table_to_formal_data_root_when_explicitly_confirmed(
+                candidate_table_staging_manifest_path=staging_manifest,
+                formal_data_root=formal_data_root,
+                confirm_formal_write=True,
+                generated_at="2026-06-30T23:20:00+08:00",
+            )
+
+            self.assertFalse((formal_data_root / "ashare").exists())
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertIn("candidate_table_staging_manifest_invalid", report["issues"])
+        self.assertFalse(report["candidate_table_update_performed"])
+
+    def test_write_candidate_table_to_formal_data_root_when_explicitly_confirmed_blocks_forbidden_staging_row_without_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            staging_manifest = self._write_single_staged_candidate_table(root / "staging")
+            table_root = staging_manifest.parent
+            rows = [
+                json.loads(line)
+                for line in (table_root / "candidate-table-draft.jsonl").read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            rows[0]["buy_signal"] = True
+            (table_root / "candidate-table-draft.jsonl").write_text(
+                "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
+                encoding="utf-8",
+            )
+            formal_data_root = root / "formal-data"
+
+            report = write_candidate_table_to_formal_data_root_when_explicitly_confirmed(
+                candidate_table_staging_manifest_path=staging_manifest,
+                formal_data_root=formal_data_root,
+                confirm_formal_write=True,
+                generated_at="2026-06-30T23:25:00+08:00",
+            )
+
+            self.assertFalse((formal_data_root / "ashare").exists())
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertIn("candidate_table_formal_forbidden_output_field_present", report["issues"])
+        payload = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn("buy_signal", payload)
+        self.assertFalse(any(field in payload for field in FORBIDDEN_FIELDS))
+
+    def test_write_candidate_table_to_formal_data_root_when_explicitly_confirmed_rolls_back_when_replace_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            staging_manifest = self._write_single_staged_candidate_table(root / "staging")
+            formal_data_root = root / "formal-data"
+            live_root = formal_data_root / "ashare" / "candidate-table-v0.1"
+            live_root.mkdir(parents=True)
+            (live_root / "candidate-table.jsonl").write_text('{"old": true}\n', encoding="utf-8")
+            (live_root / "manifest.json").write_text('{"manifest_id": "old"}\n', encoding="utf-8")
+
+            report = write_candidate_table_to_formal_data_root_when_explicitly_confirmed(
+                candidate_table_staging_manifest_path=staging_manifest,
+                formal_data_root=formal_data_root,
+                confirm_formal_write=True,
+                generated_at="2026-06-30T23:30:00+08:00",
+                simulate_failure_step="after_backup",
+            )
+            old_payload = (live_root / "candidate-table.jsonl").read_text(encoding="utf-8")
+            backups = list((formal_data_root / "ashare").glob("candidate-table-v0.1.backup.*"))
+            backup_file_exists = bool(backups) and (backups[0] / "candidate-table.jsonl").exists()
+            tmp_exists = (formal_data_root / "ashare" / "candidate-table-v0.1.__tmp__").exists()
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertIn("candidate_table_formal_write_failed_after_backup", report["issues"])
+        self.assertEqual(old_payload, '{"old": true}\n')
+        self.assertEqual(len(backups), 1)
+        self.assertTrue(backup_file_exists)
+        self.assertFalse(tmp_exists)
+        self.assertFalse(report["candidate_table_update_performed"])
+        self.assertFalse(report["trading_layer_read_allowed"])
 
     def test_build_default_add_on_price_limit_shortlist_malf_research_prep_materializes_canonical_shortlist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
