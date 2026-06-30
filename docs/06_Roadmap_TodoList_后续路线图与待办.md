@@ -119,12 +119,22 @@ undercovered_rhythm_meanings`，防止后续样本目录退化为只覆盖理由
 
 [2026-06-30-p4b-candidate-table-update-design.md](./superpowers/specs/2026-06-30-p4b-candidate-table-update-design.md)
 
+[2026-06-30-p4c-formal-candidate-table-write-design.md](./superpowers/specs/2026-06-30-p4c-formal-candidate-table-write-design.md)
+
 待办：
 
 - [x] 设计真实持久化写入入口。
 - [x] 设计 candidate table 更新入口。
 - [x] 先在临时目录验证真实文件 IO。
-- [ ] 再讨论是否写入正式 `data_root`。
+- [x] 再讨论是否写入正式 `data_root`（P4c 设计规格已完成，实现待确认）。
+
+P4c 设计决策（已拍板，待实现）：
+
+- 正式路径：`Z:\asteria-trading-labs-data\ashare\candidate-table-v0.1\candidate-table.jsonl` + `manifest.json`
+- 格式：JSONL
+- 人工 gate：`confirm_formal_write=True` 必须显式传入；否则立即 block
+- Rollback：完整回滚，不留残件；旧正式目录写入前自动备份到 `candidate-table-v0.1.backup.<ISO8601>/`
+- Trading layer：P4c 完成后仍关闭；另走 P5 独立审计才能开放
 
 P4a 已完成项：
 
