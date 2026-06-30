@@ -1,8 +1,8 @@
 # 06_Roadmap_TodoList — 后续路线图与待办
 
-**版本**: v0.4
+**版本**: v0.5
 **日期**: 2026-06-30
-**当前基线**: `candidate_table_update_audit_package_prepared`
+**当前基线**: `qualification_record_staging_persistence_performed`
 **文档性质**: 未来待办、路线图与优先级安排
 
 ## 1. 当前基线
@@ -11,10 +11,12 @@
 
 - 资格记录审计链路已推进到 `formal_record_ready_for_persistence`。
 - 已准备 `qualification_record_persistence_package`。
-- 尚未执行真实持久化写入。
+- 已完成 P4a：在临时/staging 目录验证资格记录真实文件 IO。
 - 已完成 M1：`prepare_candidate_table_update_audit_when_explicitly_requested`。
 - 已生成 candidate table update audit package。
+- 已生成 staging qualification record manifest 与 records。
 - 尚未真实更新 candidate table。
+- 尚未写入正式 `data_root`。
 - 尚未开放 trading layer。
 - 尚未开放 signal generation 或 backtest execution。
 
@@ -116,10 +118,18 @@ undercovered_rhythm_meanings`，防止后续样本目录退化为只覆盖理由
 
 待办：
 
-- [ ] 设计真实持久化写入入口。
+- [x] 设计真实持久化写入入口。
 - [ ] 设计 candidate table 更新入口。
-- [ ] 先在临时目录验证真实文件 IO。
+- [x] 先在临时目录验证真实文件 IO。
 - [ ] 再讨论是否写入正式 `data_root`。
+
+P4a 已完成项：
+
+- 入口：`write_qualification_records_to_staging_when_explicitly_requested`
+- 输出：`qualification-records-v0.1/records/<qualification_record_id>.json`
+- 输出：`qualification-records-v0.1/manifest.json`
+- 边界：只写调用方传入的 staging root，不写正式 `data_root`。
+- 边界：`candidate_table_update_performed=False`，`candidate_table_update_allowed=False`，trading layer、signal、backtest 继续关闭。
 
 ## 7. P5：制度规则定义
 

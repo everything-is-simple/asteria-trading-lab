@@ -20,6 +20,7 @@ from .first_batch import (
     review_add_on_price_limit_post_label_daily_malf_structure,
     review_add_on_price_limit_post_label_intraday_reopen,
     rescreen_add_on_price_limit_post_industry_window,
+    write_qualification_records_to_staging_when_explicitly_requested,
 )
 from .readers import (
     build_minimal_read_report,
@@ -61,6 +62,7 @@ __all__ = [
     "review_add_on_price_limit_post_label_daily_malf_structure",
     "review_add_on_price_limit_post_label_intraday_reopen",
     "rescreen_add_on_price_limit_post_industry_window",
+    "write_qualification_records_to_staging_when_explicitly_requested",
     "build_minimal_institution_fact_package",
     "build_minimal_read_report",
     "inspect_duckdb_assets",

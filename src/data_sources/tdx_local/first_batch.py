@@ -1473,6 +1473,126 @@ def prepare_candidate_table_update_audit_when_explicitly_requested(
     )
 
 
+def write_qualification_records_to_staging_when_explicitly_requested(
+    candidate_table_update_audit_report: dict[str, Any],
+    staging_root: str | Path,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    generated_at_value = generated_at or datetime.now().astimezone().isoformat(timespec="seconds")
+    audit_packages = candidate_table_update_audit_report.get("candidate_table_update_audit_packages", [])
+    issues: list[str] = []
+    staging_records: list[dict[str, Any]] = []
+    held_items: list[dict[str, Any]] = []
+
+    if candidate_table_update_audit_report.get("candidate_table_update_audit_result") != "pass":
+        issues.append("candidate_table_update_audit_not_pass")
+    if candidate_table_update_audit_report.get("candidate_table_update_package_prepared") is not True:
+        issues.append("candidate_table_update_package_not_prepared")
+    if candidate_table_update_audit_report.get("candidate_table_update_performed") is not False:
+        issues.append("candidate_table_update_must_not_be_performed_before_staging_persistence")
+    if candidate_table_update_audit_report.get("candidate_table_update_allowed") is not False:
+        issues.append("candidate_table_update_allowed_must_remain_false_for_staging_persistence")
+    if not isinstance(audit_packages, list) or not audit_packages:
+        issues.append("candidate_table_update_audit_packages_missing")
+        audit_packages = []
+
+    for audit_package in audit_packages:
+        if not isinstance(audit_package, dict):
+            issues.append("invalid_candidate_table_update_audit_package")
+            continue
+
+        forbidden_field = _first_forbidden_output_field_present(audit_package)
+        if forbidden_field is not None:
+            held_items.append(
+                _held_qualification_record_staging_item(
+                    audit_package,
+                    "qualification_record_staging_forbidden_output_field_present",
+                )
+            )
+            continue
+
+        if audit_package.get("candidate_table_update_audit_result") != "pass":
+            held_items.append(
+                _held_qualification_record_staging_item(
+                    audit_package,
+                    "candidate_table_update_audit_package_not_pass",
+                )
+            )
+            continue
+
+        if audit_package.get("candidate_table_update_package_prepared") is not True:
+            held_items.append(
+                _held_qualification_record_staging_item(
+                    audit_package,
+                    "candidate_table_update_audit_package_not_prepared",
+                )
+            )
+            continue
+
+        if audit_package.get("candidate_table_update_performed") is not False:
+            held_items.append(
+                _held_qualification_record_staging_item(
+                    audit_package,
+                    "candidate_table_update_must_not_be_performed_before_staging_persistence",
+                )
+            )
+            continue
+
+        staging_records.append(_qualification_record_staging_record(audit_package, generated_at_value))
+
+    if issues or held_items or not staging_records:
+        return _qualification_record_staging_blocked_report(
+            candidate_table_update_audit_report,
+            generated_at_value,
+            issues,
+            held_items,
+        )
+
+    root = Path(staging_root)
+    package_root = root / "qualification-records-v0.1"
+    records_root = package_root / "records"
+    records_root.mkdir(parents=True, exist_ok=True)
+
+    record_files: list[str] = []
+    for record in staging_records:
+        file_name = f"{_safe_json_file_stem(str(record.get('qualification_record_id', 'UNKNOWN')))}.json"
+        file_path = records_root / file_name
+        _write_json_atomic(file_path, record)
+        record_files.append(f"records/{file_name}")
+
+    manifest = _qualification_record_staging_manifest(
+        candidate_table_update_audit_report,
+        generated_at_value,
+        record_files,
+    )
+    _write_json_atomic(package_root / "manifest.json", manifest)
+
+    return _strip_forbidden_fields(
+        {
+            "result": "pass",
+            "generated_at": generated_at_value,
+            "research_only": True,
+            "package_id": "qualification_record_staging_persistence_v0.1",
+            "source_audit_id": candidate_table_update_audit_report.get("audit_id"),
+            "manifest_file": str(package_root / "manifest.json"),
+            "record_files": record_files,
+            "qualification_record_staging_count": len(staging_records),
+            "held_qualification_record_staging_count": 0,
+            "qualification_record_persistence_performed": True,
+            "qualification_record_persistence_target": "staging",
+            "candidate_table_update_performed": False,
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:hold_for_candidate_table_update_staging_review",
+        }
+    )
+
+
 def materialize_default_add_on_price_limit_core_malf_research_bundle(
     data_root: str | Path,
     tdx_root: str | Path,
@@ -3060,6 +3180,129 @@ def _held_candidate_table_update_audit_item(
     )
 
 
+def _qualification_record_staging_record(
+    audit_package: dict[str, Any],
+    generated_at: str,
+) -> dict[str, Any]:
+    boundary_warning = list(audit_package.get("boundary_warning", []))
+    for item in [
+        "staging_persistence_is_not_candidate_table_update",
+        "staging_persistence_does_not_open_trading_layer",
+        "candidate_table_update_requires_separate_explicit_call",
+    ]:
+        if item not in boundary_warning:
+            boundary_warning.append(item)
+
+    return _strip_forbidden_fields(
+        {
+            **audit_package,
+            "qualification_record_status": "formal_record_persisted_to_staging",
+            "source_candidate_table_update_audit_result": audit_package.get("candidate_table_update_audit_result"),
+            "qualification_record_persisted_at": generated_at,
+            "qualification_record_persistence_performed": True,
+            "qualification_record_persistence_target": "staging",
+            "boundary_warning": boundary_warning,
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_performed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:hold_for_candidate_table_update_staging_review",
+        }
+    )
+
+
+def _held_qualification_record_staging_item(
+    audit_package: dict[str, Any],
+    reason: str,
+) -> dict[str, Any]:
+    return _strip_forbidden_fields(
+        {
+            "qualification_record_id": audit_package.get("qualification_record_id"),
+            "ts_code": audit_package.get("ts_code"),
+            "qualification_rule_id": audit_package.get("qualification_rule_id"),
+            "candidate_table_update_audit_result": audit_package.get("candidate_table_update_audit_result"),
+            "qualification_record_persistence_status": "hold",
+            "qualification_record_persistence_reason": reason,
+            "qualification_record_persistence_performed": False,
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_performed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:repair_qualification_record_staging_inputs",
+        }
+    )
+
+
+def _qualification_record_staging_blocked_report(
+    candidate_table_update_audit_report: dict[str, Any],
+    generated_at: str,
+    issues: list[str],
+    held_items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if not issues and not held_items:
+        issues = ["qualification_record_staging_records_missing"]
+
+    return _strip_forbidden_fields(
+        {
+            "result": "blocked",
+            "generated_at": generated_at,
+            "research_only": True,
+            "package_id": "qualification_record_staging_persistence_v0.1",
+            "source_audit_id": candidate_table_update_audit_report.get("audit_id"),
+            "issues": issues,
+            "qualification_record_staging_count": 0,
+            "held_qualification_record_staging_count": len(held_items),
+            "held_qualification_record_staging_items": held_items,
+            "qualification_record_persistence_performed": False,
+            "qualification_record_persistence_target": "staging",
+            "candidate_table_update_performed": False,
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:repair_qualification_record_staging_inputs",
+        }
+    )
+
+
+def _qualification_record_staging_manifest(
+    candidate_table_update_audit_report: dict[str, Any],
+    generated_at: str,
+    record_files: list[str],
+) -> dict[str, Any]:
+    return _strip_forbidden_fields(
+        {
+            "manifest_id": "qualification_record_staging_manifest_v0.1",
+            "generated_at": generated_at,
+            "source_audit_id": candidate_table_update_audit_report.get("audit_id"),
+            "qualification_record_count": len(record_files),
+            "record_files": record_files,
+            "qualification_record_persistence_performed": True,
+            "qualification_record_persistence_target": "staging",
+            "candidate_table_update_performed": False,
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:hold_for_candidate_table_update_staging_review",
+        }
+    )
+
+
 def _reviewed_snapshot_candidate(candidate: dict[str, Any], verdict: dict[str, Any], generated_at: str) -> dict[str, Any] | None:
     draft = candidate.get("suggested_snapshot_draft")
     if not isinstance(draft, dict):
@@ -3215,6 +3458,24 @@ def _to_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f"{path.name}.tmp")
+    temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temp_path.replace(path)
+
+
+def _safe_json_file_stem(value: str) -> str:
+    safe_chars = []
+    for char in value:
+        if char.isalnum() or char in {".", "-", "_"}:
+            safe_chars.append(char)
+        else:
+            safe_chars.append("_")
+    safe_value = "".join(safe_chars).strip("._")
+    return safe_value or "UNKNOWN"
 
 
 def _strip_forbidden_fields(value: Any) -> Any:
