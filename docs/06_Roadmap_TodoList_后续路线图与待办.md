@@ -1,6 +1,6 @@
 # 06_Roadmap_TodoList — 后续路线图与待办
 
-**版本**: v0.3
+**版本**: v0.4
 **日期**: 2026-06-30
 **当前基线**: `candidate_table_update_audit_package_prepared`
 **文档性质**: 未来待办、路线图与优先级安排
@@ -87,10 +87,14 @@ undercovered_rhythm_meanings`，防止后续样本目录退化为只覆盖理由
 
 目标：整理 `execution_policy_research_agenda` 的制度研究素材。
 
-- [ ] 整理 `t1` 研究材料。
-- [ ] 整理 `price_limit` 研究材料。
-- [ ] 整理 `suspension_resume` 研究材料。
-- [ ] 输出制度研究收口报告。
+- [x] 整理 `t1` 研究材料。
+- [x] 整理 `price_limit` 研究材料。
+- [x] 整理 `suspension_resume` 研究材料。
+- [x] 输出制度研究收口报告。
+
+收口报告：
+
+[Tachibana-A股制度研究准备层收口报告-v0.1.md](./tachibana/index/Tachibana-A股制度研究准备层收口报告-v0.1.md)
 
 边界：
 
