@@ -1390,6 +1390,89 @@ def prepare_formal_qualification_record_persistence_package_when_explicitly_requ
     )
 
 
+def prepare_candidate_table_update_audit_when_explicitly_requested(
+    persistence_package_report: dict[str, Any],
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    generated_at_value = generated_at or datetime.now().astimezone().isoformat(timespec="seconds")
+    audit_packages: list[dict[str, Any]] = []
+    held_items: list[dict[str, Any]] = []
+    issues: list[str] = []
+
+    persistence_packages = persistence_package_report.get("qualification_record_persistence_packages", [])
+    if not isinstance(persistence_packages, list) or not persistence_packages:
+        issues.append("qualification_record_persistence_packages_missing")
+        persistence_packages = []
+
+    for persistence_package in persistence_packages:
+        if not isinstance(persistence_package, dict):
+            issues.append("invalid_qualification_record_persistence_package")
+            continue
+
+        forbidden_field = _first_forbidden_output_field_present(persistence_package)
+        if forbidden_field is not None:
+            held_items.append(
+                _held_candidate_table_update_audit_item(
+                    persistence_package,
+                    "candidate_table_update_forbidden_output_field_present",
+                )
+            )
+            continue
+
+        if persistence_package.get("qualification_record_status") != "formal_record_ready_for_persistence":
+            held_items.append(
+                _held_candidate_table_update_audit_item(
+                    persistence_package,
+                    "qualification_record_not_ready_for_persistence",
+                )
+            )
+            continue
+
+        if persistence_package.get("qualification_record_persistence_performed") is not False:
+            held_items.append(
+                _held_candidate_table_update_audit_item(
+                    persistence_package,
+                    "qualification_record_persistence_state_must_be_prepared_not_performed",
+                )
+            )
+            continue
+
+        audit_packages.append(_candidate_table_update_audit_package(persistence_package, generated_at_value))
+
+    next_action = (
+        "action:hold_for_explicit_candidate_table_update_writer"
+        if audit_packages
+        else "action:repair_candidate_table_update_audit_inputs"
+    )
+
+    return _strip_forbidden_fields(
+        {
+            "result": "pass" if audit_packages else "blocked",
+            "generated_at": generated_at_value,
+            "research_only": True,
+            "audit_id": "candidate_table_update_audit_package_v0.1",
+            "source_package_id": persistence_package_report.get("package_id"),
+            "candidate_table_update_audit_result": "pass" if audit_packages else "blocked",
+            "candidate_table_update_package_prepared": bool(audit_packages),
+            "candidate_table_update_performed": False,
+            "candidate_table_update_audit_candidate_count": len(audit_packages),
+            "held_candidate_table_update_audit_count": len(held_items),
+            "formal_front_filter_ready_count": 0,
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "issues": issues,
+            "candidate_table_update_audit_packages": audit_packages,
+            "held_candidate_table_update_audit_items": held_items,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": next_action,
+        }
+    )
+
+
 def materialize_default_add_on_price_limit_core_malf_research_bundle(
     data_root: str | Path,
     tdx_root: str | Path,
@@ -2905,6 +2988,78 @@ def _held_formal_qualification_record_persistence_item(
     )
 
 
+def _candidate_table_update_audit_package(
+    persistence_package: dict[str, Any],
+    generated_at: str,
+) -> dict[str, Any]:
+    boundary_warning = list(persistence_package.get("boundary_warning", []))
+    for item in [
+        "candidate_table_update_audit_is_not_table_write",
+        "candidate_table_update_writer_requires_separate_explicit_call",
+        "candidate_table_update_audit_does_not_open_trading_layer",
+        "trading_layer_read_requires_separate_gate",
+    ]:
+        if item not in boundary_warning:
+            boundary_warning.append(item)
+
+    return _strip_forbidden_fields(
+        {
+            "candidate_table_update_audit_result": "pass",
+            "qualification_record_status": persistence_package.get("qualification_record_status"),
+            "qualification_record_id": persistence_package.get("qualification_record_id"),
+            "ashare_sample_id": persistence_package.get("ashare_sample_id"),
+            "ts_code": persistence_package.get("ts_code"),
+            "symbol_name": persistence_package.get("symbol_name"),
+            "sample_window_start": persistence_package.get("sample_window_start"),
+            "sample_window_end": persistence_package.get("sample_window_end"),
+            "qualification_rule_id": persistence_package.get("qualification_rule_id"),
+            "rhythm_meaning": persistence_package.get("rhythm_meaning"),
+            "tachibana_applicability": persistence_package.get("tachibana_applicability"),
+            "source_qualification_record_persistence_performed": persistence_package.get(
+                "qualification_record_persistence_performed"
+            ),
+            "candidate_table_update_audited_at": generated_at,
+            "candidate_table_update_package_prepared": True,
+            "candidate_table_update_performed": False,
+            "boundary_warning": boundary_warning,
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:hold_for_explicit_candidate_table_update_writer",
+        }
+    )
+
+
+def _held_candidate_table_update_audit_item(
+    persistence_package: dict[str, Any],
+    reason: str,
+) -> dict[str, Any]:
+    return _strip_forbidden_fields(
+        {
+            "qualification_record_id": persistence_package.get("qualification_record_id"),
+            "ts_code": persistence_package.get("ts_code"),
+            "qualification_rule_id": persistence_package.get("qualification_rule_id"),
+            "qualification_record_status": persistence_package.get("qualification_record_status"),
+            "candidate_table_update_audit_result": "hold",
+            "candidate_table_update_audit_reason": reason,
+            "candidate_table_update_package_prepared": False,
+            "candidate_table_update_performed": False,
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:repair_candidate_table_update_audit_inputs",
+        }
+    )
+
+
 def _reviewed_snapshot_candidate(candidate: dict[str, Any], verdict: dict[str, Any], generated_at: str) -> dict[str, Any] | None:
     draft = candidate.get("suggested_snapshot_draft")
     if not isinstance(draft, dict):
@@ -3072,3 +3227,10 @@ def _strip_forbidden_fields(value: Any) -> Any:
     if isinstance(value, list):
         return [_strip_forbidden_fields(item) for item in value]
     return value
+
+
+def _first_forbidden_output_field_present(value: dict[str, Any]) -> str | None:
+    for field in sorted(FORBIDDEN_OUTPUT_FIELDS):
+        if field in value:
+            return field
+    return None

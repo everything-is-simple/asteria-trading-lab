@@ -1,8 +1,8 @@
 # 06_Roadmap_TodoList — 后续路线图与待办
 
-**版本**: v0.1
+**版本**: v0.2
 **日期**: 2026-06-30
-**当前基线**: `formal_record_ready_for_persistence`
+**当前基线**: `candidate_table_update_audit_package_prepared`
 **文档性质**: 未来待办、路线图与优先级安排
 
 ## 1. 当前基线
@@ -12,7 +12,9 @@
 - 资格记录审计链路已推进到 `formal_record_ready_for_persistence`。
 - 已准备 `qualification_record_persistence_package`。
 - 尚未执行真实持久化写入。
-- 尚未更新 candidate table。
+- 已完成 M1：`prepare_candidate_table_update_audit_when_explicitly_requested`。
+- 已生成 candidate table update audit package。
+- 尚未真实更新 candidate table。
 - 尚未开放 trading layer。
 - 尚未开放 signal generation 或 backtest execution。
 
@@ -26,30 +28,30 @@
 - [x] 使用本文件承接未来路线图、TodoList、急需任务和后续阶段安排。
 - [x] 后续更新时，避免把“计划要做”写成“已经完成”。
 
-## 3. P1：candidate table update audit
+## 3. M1：candidate table update audit
 
 目标：新增显式触发入口，只做候选表更新前审计，不做真实写入。
 
-计划入口：
+入口：
 
 `prepare_candidate_table_update_audit_when_explicitly_requested`
 
 边界要求：
 
-- [ ] 输入必须来自已准备好的 `qualification_record_persistence_package`。
-- [ ] 输出只能是 candidate table update audit package。
-- [ ] 不得直接写 candidate table。
-- [ ] 不得开放 trading layer。
-- [ ] 不得产生买卖信号。
-- [ ] 不得执行回测。
+- [x] 输入必须来自已准备好的 `qualification_record_persistence_package`。
+- [x] 输出只能是 candidate table update audit package。
+- [x] 不得直接写 candidate table。
+- [x] 不得开放 trading layer。
+- [x] 不得产生买卖信号。
+- [x] 不得执行回测。
 
 测试要求：
 
-- [ ] pass case
-- [ ] blocked case
-- [ ] 禁用字段校验
-- [ ] 三道硬闸继续为 false
-- [ ] 不允许混入交易信号、仓位、回测字段
+- [x] pass case
+- [x] blocked case
+- [x] 禁用字段校验
+- [x] 三道硬闸继续为 false
+- [x] 不允许混入交易信号、仓位、回测字段
 
 验证命令：
 

@@ -26,6 +26,7 @@ from data_sources.tdx_local import (
     build_first_batch_sample_package,
     build_default_add_on_price_limit_shortlist_malf_research_prep,
     prepare_malf_snapshot_draft_review,
+    prepare_candidate_table_update_audit_when_explicitly_requested,
     prepare_formal_front_filter_review_package,
     prepare_formal_qualification_record_persistence_package_when_explicitly_requested,
     prepare_formal_qualification_record_write_audit,
@@ -1553,6 +1554,125 @@ class TdxLocalFirstBatchTest(unittest.TestCase):
         self.assertFalse(report["qualification_record_write_allowed"])
         self.assertFalse(report["candidate_table_update_allowed"])
         self.assertFalse(report["trading_layer_read_allowed"])
+        self.assertFalse(report["formal_data_write_allowed"])
+        self.assertFalse(report["institution_rule_definition_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+        self.assertNotIn("action:update_candidate_table", payload)
+        self.assertFalse(any(field in payload for field in FORBIDDEN_FIELDS))
+
+    def test_prepare_candidate_table_update_audit_when_explicitly_requested_prepares_audit_package_without_updating_table(self) -> None:
+        persistence_report = {
+            "result": "pass",
+            "research_only": True,
+            "package_id": "formal_qualification_record_persistence_package_v0.1",
+            "qualification_record_persistence_package_prepared": True,
+            "qualification_record_persistence_performed": False,
+            "qualification_record_persistence_packages": [
+                {
+                    "qualification_record_status": "formal_record_ready_for_persistence",
+                    "qualification_record_id": "ASHARE-QUAL-600310.SH-2026-04-23-2026-06-29-v0.1",
+                    "ashare_sample_id": "ASHARE-ADDON-600310-20260605",
+                    "ts_code": "600310.SH",
+                    "symbol_name": "桂东电力",
+                    "sample_window_start": "2026-04-23",
+                    "sample_window_end": "2026-06-29",
+                    "qualification_rule_id": "Q-PRESSURE-ADJUST",
+                    "rhythm_meaning": "limited",
+                    "tachibana_applicability": "conditional",
+                    "qualification_record_persistence_performed": False,
+                    "qualification_record_write_allowed": False,
+                    "candidate_table_update_allowed": False,
+                    "trading_layer_read_allowed": False,
+                }
+            ],
+        }
+
+        report = prepare_candidate_table_update_audit_when_explicitly_requested(
+            persistence_report,
+            generated_at="2026-06-30T19:30:00+08:00",
+        )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertTrue(report["research_only"])
+        self.assertEqual(report["audit_id"], "candidate_table_update_audit_package_v0.1")
+        self.assertEqual(report["source_package_id"], "formal_qualification_record_persistence_package_v0.1")
+        self.assertEqual(report["candidate_table_update_audit_result"], "pass")
+        self.assertTrue(report["candidate_table_update_package_prepared"])
+        self.assertFalse(report["candidate_table_update_performed"])
+        self.assertFalse(report["candidate_table_update_allowed"])
+        self.assertFalse(report["trading_layer_read_allowed"])
+        self.assertFalse(report["formal_data_write_allowed"])
+        self.assertFalse(report["institution_rule_definition_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+        self.assertEqual(report["candidate_table_update_audit_candidate_count"], 1)
+        self.assertEqual(report["held_candidate_table_update_audit_count"], 0)
+        self.assertEqual(report["next_action"], "action:hold_for_explicit_candidate_table_update_writer")
+
+        item = report["candidate_table_update_audit_packages"][0]
+        self.assertEqual(item["candidate_table_update_audit_result"], "pass")
+        self.assertEqual(item["qualification_record_status"], "formal_record_ready_for_persistence")
+        self.assertEqual(item["candidate_table_update_audited_at"], "2026-06-30T19:30:00+08:00")
+        self.assertTrue(item["candidate_table_update_package_prepared"])
+        self.assertFalse(item["candidate_table_update_performed"])
+        self.assertFalse(item["candidate_table_update_allowed"])
+        self.assertFalse(item["trading_layer_read_allowed"])
+        self.assertIn("candidate_table_update_audit_is_not_table_write", item["boundary_warning"])
+        self.assertIn("candidate_table_update_writer_requires_separate_explicit_call", item["boundary_warning"])
+        payload = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn("candidate_table_update_audit_allowed", payload)
+        self.assertNotIn("action:update_candidate_table", payload)
+        self.assertFalse(any(field in payload for field in FORBIDDEN_FIELDS))
+
+    def test_prepare_candidate_table_update_audit_when_explicitly_requested_holds_bad_or_forbidden_packages(self) -> None:
+        persistence_report = {
+            "result": "blocked",
+            "research_only": True,
+            "package_id": "formal_qualification_record_persistence_package_v0.1",
+            "qualification_record_persistence_package_prepared": True,
+            "qualification_record_persistence_packages": [
+                {
+                    "qualification_record_status": "draft_only",
+                    "qualification_record_id": "ASHARE-QUAL-603687.SH-2026-04-23-2026-06-29-v0.1",
+                    "ts_code": "603687.SH",
+                    "qualification_rule_id": "Q-PRESSURE-ADJUST",
+                },
+                {
+                    "qualification_record_status": "formal_record_ready_for_persistence",
+                    "qualification_record_id": "ASHARE-QUAL-000899.SZ-2026-04-23-2026-06-29-v0.1",
+                    "ts_code": "000899.SZ",
+                    "qualification_rule_id": "Q-PRESSURE-ADJUST",
+                    "trade_accept": True,
+                },
+            ],
+        }
+
+        report = prepare_candidate_table_update_audit_when_explicitly_requested(
+            persistence_report,
+            generated_at="2026-06-30T19:35:00+08:00",
+        )
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertEqual(report["candidate_table_update_audit_result"], "blocked")
+        self.assertFalse(report["candidate_table_update_package_prepared"])
+        self.assertFalse(report["candidate_table_update_performed"])
+        self.assertFalse(report["candidate_table_update_allowed"])
+        self.assertFalse(report["trading_layer_read_allowed"])
+        self.assertEqual(report["candidate_table_update_audit_candidate_count"], 0)
+        self.assertEqual(report["held_candidate_table_update_audit_count"], 2)
+        self.assertEqual(report["next_action"], "action:repair_candidate_table_update_audit_inputs")
+        by_id = {item["qualification_record_id"]: item for item in report["held_candidate_table_update_audit_items"]}
+        self.assertEqual(
+            by_id["ASHARE-QUAL-603687.SH-2026-04-23-2026-06-29-v0.1"]["candidate_table_update_audit_reason"],
+            "qualification_record_not_ready_for_persistence",
+        )
+        self.assertEqual(
+            by_id["ASHARE-QUAL-000899.SZ-2026-04-23-2026-06-29-v0.1"]["candidate_table_update_audit_reason"],
+            "candidate_table_update_forbidden_output_field_present",
+        )
+        payload = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn("candidate_table_update_audit_allowed", payload)
         self.assertFalse(report["formal_data_write_allowed"])
         self.assertFalse(report["institution_rule_definition_allowed"])
         self.assertFalse(report["signal_generation_allowed"])
