@@ -116,10 +116,12 @@ undercovered_rhythm_meanings`，防止后续样本目录退化为只覆盖理由
 
 [2026-06-30-p4-persistence-and-candidate-table-design.md](./superpowers/specs/2026-06-30-p4-persistence-and-candidate-table-design.md)
 
+[2026-06-30-p4b-candidate-table-update-design.md](./superpowers/specs/2026-06-30-p4b-candidate-table-update-design.md)
+
 待办：
 
 - [x] 设计真实持久化写入入口。
-- [ ] 设计 candidate table 更新入口。
+- [x] 设计 candidate table 更新入口。
 - [x] 先在临时目录验证真实文件 IO。
 - [ ] 再讨论是否写入正式 `data_root`。
 
@@ -130,6 +132,16 @@ P4a 已完成项：
 - 输出：`qualification-records-v0.1/manifest.json`
 - 边界：只写调用方传入的 staging root，不写正式 `data_root`。
 - 边界：`candidate_table_update_performed=False`，`candidate_table_update_allowed=False`，trading layer、signal、backtest 继续关闭。
+
+P4b 已完成设计：
+
+- 入口草案：`update_candidate_table_from_staged_qualification_records_when_explicitly_requested`
+- 推荐格式：`candidate-table-draft.jsonl` + `manifest.json`
+- 推荐路径：调用方传入的 candidate table staging root。
+- merge key：`qualification_record_id`
+- 重复处理：同一 manifest 内重复 key 阻断；既有 staging 表同 key 不一致时阻断。
+- rollback：先写临时目录，完成后替换，manifest 最后可见。
+- 边界：P4b 设计不等于实现，尚未真实更新 candidate table。
 
 ## 7. P5：制度规则定义
 
