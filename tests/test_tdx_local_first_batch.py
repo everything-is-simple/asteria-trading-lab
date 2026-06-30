@@ -26,8 +26,8 @@ from data_sources.tdx_local import (
     build_first_batch_sample_package,
     build_default_add_on_price_limit_shortlist_malf_research_prep,
     prepare_malf_snapshot_draft_review,
-    commit_formal_qualification_records_when_explicitly_requested,
     prepare_formal_front_filter_review_package,
+    prepare_formal_qualification_record_persistence_package_when_explicitly_requested,
     prepare_formal_qualification_record_write_audit,
     prepare_qualification_record_draft_review,
     review_add_on_price_limit_post_label_daily_malf_structure,
@@ -1365,7 +1365,10 @@ class TdxLocalFirstBatchTest(unittest.TestCase):
         self.assertFalse(report["qualification_record_write_allowed"])
         self.assertFalse(report["candidate_table_update_allowed"])
         self.assertFalse(report["trading_layer_read_allowed"])
-        self.assertEqual(report["next_action"], "action:manual_commit_formal_qualification_records_when_explicitly_requested")
+        self.assertEqual(
+            report["next_action"],
+            "action:prepare_formal_qualification_record_persistence_package_when_explicitly_requested",
+        )
 
         item = report["formal_record_write_audit_candidates"][0]
         self.assertEqual(item["formal_record_write_audit_status"], "pass")
@@ -1436,7 +1439,7 @@ class TdxLocalFirstBatchTest(unittest.TestCase):
         self.assertNotIn("action:update_candidate_table", payload)
         self.assertFalse(any(field in payload for field in FORBIDDEN_FIELDS))
 
-    def test_commit_formal_qualification_records_when_explicitly_requested_writes_records_without_candidate_table_update(self) -> None:
+    def test_prepare_formal_qualification_record_persistence_package_when_explicitly_requested_prepares_package_without_writing_record(self) -> None:
         write_audit_report = {
             "result": "pass",
             "research_only": True,
@@ -1462,34 +1465,40 @@ class TdxLocalFirstBatchTest(unittest.TestCase):
             ],
         }
 
-        report = commit_formal_qualification_records_when_explicitly_requested(
+        report = prepare_formal_qualification_record_persistence_package_when_explicitly_requested(
             write_audit_report,
             generated_at="2026-06-30T16:55:00+08:00",
         )
 
         self.assertEqual(report["result"], "pass")
         self.assertTrue(report["research_only"])
-        self.assertEqual(report["commit_id"], "formal_qualification_record_commit_v0.1")
+        self.assertEqual(report["package_id"], "formal_qualification_record_persistence_package_v0.1")
         self.assertEqual(report["source_audit_id"], "formal_qualification_record_write_audit_v0.1")
-        self.assertEqual(report["committed_qualification_record_count"], 1)
-        self.assertEqual(report["held_qualification_record_commit_count"], 0)
+        self.assertEqual(report["qualification_record_persistence_package_count"], 1)
+        self.assertEqual(report["held_qualification_record_persistence_count"], 0)
         self.assertEqual(report["next_action"], "action:prepare_candidate_table_update_audit_when_explicitly_requested")
-        self.assertTrue(report["qualification_record_commit_performed"])
+        self.assertTrue(report["qualification_record_persistence_package_prepared"])
+        self.assertFalse(report["qualification_record_persistence_performed"])
+        self.assertFalse(report["qualification_record_write_allowed"])
         self.assertFalse(report["candidate_table_update_allowed"])
         self.assertFalse(report["trading_layer_read_allowed"])
         self.assertFalse(report["formal_front_filter_ready_count"])
 
-        record = report["committed_qualification_records"][0]
-        self.assertEqual(record["qualification_record_status"], "formal_record_committed")
+        record = report["qualification_record_persistence_packages"][0]
+        self.assertEqual(record["qualification_record_status"], "formal_record_ready_for_persistence")
         self.assertEqual(record["qualification_record_id"], "ASHARE-QUAL-600310.SH-2026-04-23-2026-06-29-v0.1")
         self.assertEqual(record["qualification_rule_id"], "Q-PRESSURE-ADJUST")
         self.assertEqual(record["source_formal_record_write_audit_status"], "pass")
-        self.assertEqual(record["committed_at"], "2026-06-30T16:55:00+08:00")
+        self.assertEqual(record["persistence_package_prepared_at"], "2026-06-30T16:55:00+08:00")
+        self.assertFalse(record["qualification_record_persistence_performed"])
+        self.assertFalse(record["qualification_record_write_allowed"])
         self.assertFalse(record["candidate_table_update_allowed"])
         self.assertFalse(record["trading_layer_read_allowed"])
-        self.assertIn("formal_record_commit_does_not_update_candidate_table", record["boundary_warning"])
-        self.assertIn("formal_record_commit_does_not_open_trading_layer", record["boundary_warning"])
+        self.assertIn("persistence_package_is_not_record_write", record["boundary_warning"])
+        self.assertIn("explicit_persistence_writer_required_before_record_write", record["boundary_warning"])
         payload = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn("formal_record_committed", payload)
+        self.assertNotIn("committed_qualification_records", payload)
         self.assertNotIn("action:update_candidate_table", payload)
         self.assertNotIn("trade_accept", payload)
         self.assertFalse(report["formal_data_write_allowed"])
@@ -1498,7 +1507,7 @@ class TdxLocalFirstBatchTest(unittest.TestCase):
         self.assertFalse(report["backtest_execution_allowed"])
         self.assertFalse(any(field in payload for field in FORBIDDEN_FIELDS))
 
-    def test_commit_formal_qualification_records_when_explicitly_requested_holds_missing_or_blocked_audit_candidates(self) -> None:
+    def test_prepare_formal_qualification_record_persistence_package_when_explicitly_requested_holds_missing_or_blocked_audit_candidates(self) -> None:
         write_audit_report = {
             "result": "blocked",
             "research_only": True,
@@ -1518,26 +1527,30 @@ class TdxLocalFirstBatchTest(unittest.TestCase):
             ],
         }
 
-        report = commit_formal_qualification_records_when_explicitly_requested(
+        report = prepare_formal_qualification_record_persistence_package_when_explicitly_requested(
             write_audit_report,
             generated_at="2026-06-30T17:00:00+08:00",
         )
 
         self.assertEqual(report["result"], "blocked")
-        self.assertFalse(report["qualification_record_commit_performed"])
-        self.assertEqual(report["committed_qualification_record_count"], 0)
-        self.assertEqual(report["held_qualification_record_commit_count"], 2)
+        self.assertFalse(report["qualification_record_persistence_package_prepared"])
+        self.assertFalse(report["qualification_record_persistence_performed"])
+        self.assertEqual(report["qualification_record_persistence_package_count"], 0)
+        self.assertEqual(report["held_qualification_record_persistence_count"], 2)
         self.assertEqual(report["next_action"], "action:hold_for_formal_qualification_record_write_audit_passes")
-        by_id = {item["qualification_record_id"]: item for item in report["held_qualification_record_commit_items"]}
+        by_id = {item["qualification_record_id"]: item for item in report["held_qualification_record_persistence_items"]}
         self.assertEqual(
-            by_id["ASHARE-QUAL-603687.SH-2026-04-23-2026-06-29-v0.1"]["qualification_record_commit_reason"],
+            by_id["ASHARE-QUAL-603687.SH-2026-04-23-2026-06-29-v0.1"]["qualification_record_persistence_reason"],
             "formal_record_write_audit_not_pass",
         )
         self.assertEqual(
-            by_id["ASHARE-QUAL-000899.SZ-2026-04-23-2026-06-29-v0.1"]["qualification_record_commit_reason"],
+            by_id["ASHARE-QUAL-000899.SZ-2026-04-23-2026-06-29-v0.1"]["qualification_record_persistence_reason"],
             "formal_record_write_audit_not_pass",
         )
         payload = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn("formal_record_committed", payload)
+        self.assertNotIn("committed_qualification_records", payload)
+        self.assertFalse(report["qualification_record_write_allowed"])
         self.assertFalse(report["candidate_table_update_allowed"])
         self.assertFalse(report["trading_layer_read_allowed"])
         self.assertFalse(report["formal_data_write_allowed"])
