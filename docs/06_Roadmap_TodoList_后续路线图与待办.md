@@ -110,6 +110,10 @@ undercovered_rhythm_meanings`，防止后续样本目录退化为只覆盖理由
 - persistence package 与真实写入语义已经完全分离。
 - 目标写入路径、临时目录、原子替换策略明确。
 
+设计规格：
+
+[2026-06-30-p4-persistence-and-candidate-table-design.md](./superpowers/specs/2026-06-30-p4-persistence-and-candidate-table-design.md)
+
 待办：
 
 - [ ] 设计真实持久化写入入口。
