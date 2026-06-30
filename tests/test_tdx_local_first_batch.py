@@ -27,6 +27,7 @@ from data_sources.tdx_local import (
     build_default_add_on_price_limit_shortlist_malf_research_prep,
     prepare_malf_snapshot_draft_review,
     prepare_formal_front_filter_review_package,
+    prepare_formal_qualification_record_write_audit,
     prepare_qualification_record_draft_review,
     review_add_on_price_limit_post_label_daily_malf_structure,
     review_add_on_price_limit_post_label_intraday_reopen,
@@ -1320,6 +1321,118 @@ class TdxLocalFirstBatchTest(unittest.TestCase):
         self.assertFalse(report["institution_rule_definition_allowed"])
         self.assertFalse(report["signal_generation_allowed"])
         self.assertFalse(report["backtest_execution_allowed"])
+        self.assertFalse(any(field in payload for field in FORBIDDEN_FIELDS))
+
+    def test_prepare_formal_qualification_record_write_audit_collects_approved_candidates_without_writing_record(self) -> None:
+        manual_review_report = {
+            "result": "pass",
+            "research_only": True,
+            "review_id": "qualification_record_draft_manual_verdicts_v0.1",
+            "qualification_record_draft_manual_verdicts": [
+                {
+                    "qualification_record_manual_review_status": "approved_for_formal_record_write_audit_candidate",
+                    "qualification_record_id": "ASHARE-QUAL-600310.SH-2026-04-23-2026-06-29-v0.1",
+                    "ashare_sample_id": "ASHARE-ADDON-600310-20260605",
+                    "ts_code": "600310.SH",
+                    "symbol_name": "桂东电力",
+                    "sample_window_start": "2026-04-23",
+                    "sample_window_end": "2026-06-29",
+                    "qualification_rule_id": "Q-PRESSURE-ADJUST",
+                    "rhythm_meaning": "limited",
+                    "tachibana_applicability": "conditional",
+                    "manual_review_verdict": "approved_for_formal_record_write_audit",
+                    "manual_review_note": "Qualification draft evidence is coherent for write-audit preparation.",
+                    "qualification_record_write_allowed": False,
+                    "candidate_table_update_allowed": False,
+                    "trading_layer_read_allowed": False,
+                }
+            ],
+        }
+
+        report = prepare_formal_qualification_record_write_audit(
+            manual_review_report,
+            generated_at="2026-06-30T15:30:00+08:00",
+        )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertTrue(report["research_only"])
+        self.assertEqual(report["audit_id"], "formal_qualification_record_write_audit_v0.1")
+        self.assertEqual(report["source_review_id"], "qualification_record_draft_manual_verdicts_v0.1")
+        self.assertEqual(report["formal_record_write_audit_candidate_count"], 1)
+        self.assertEqual(report["formal_record_write_audit_hold_count"], 0)
+        self.assertEqual(report["formal_front_filter_ready_count"], 0)
+        self.assertFalse(report["qualification_record_write_allowed"])
+        self.assertFalse(report["candidate_table_update_allowed"])
+        self.assertFalse(report["trading_layer_read_allowed"])
+        self.assertEqual(report["next_action"], "action:manual_commit_formal_qualification_records_when_explicitly_requested")
+
+        item = report["formal_record_write_audit_candidates"][0]
+        self.assertEqual(item["formal_record_write_audit_status"], "pass")
+        self.assertEqual(item["qualification_record_id"], "ASHARE-QUAL-600310.SH-2026-04-23-2026-06-29-v0.1")
+        self.assertEqual(item["qualification_rule_id"], "Q-PRESSURE-ADJUST")
+        self.assertEqual(item["source_manual_review_status"], "approved_for_formal_record_write_audit_candidate")
+        self.assertFalse(item["qualification_record_write_allowed"])
+        self.assertFalse(item["candidate_table_update_allowed"])
+        self.assertFalse(item["trading_layer_read_allowed"])
+        self.assertIn("write_audit_is_not_record_write", item["boundary_warning"])
+        self.assertIn("explicit_commit_layer_required_before_formal_record_write", item["boundary_warning"])
+        payload = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn("action:write_qualification_record", payload)
+        self.assertNotIn("action:update_candidate_table", payload)
+        self.assertFalse(report["formal_data_write_allowed"])
+        self.assertFalse(report["institution_rule_definition_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+        self.assertFalse(any(field in payload for field in FORBIDDEN_FIELDS))
+
+    def test_prepare_formal_qualification_record_write_audit_holds_unapproved_or_missing_candidates(self) -> None:
+        manual_review_report = {
+            "result": "blocked",
+            "research_only": True,
+            "review_id": "qualification_record_draft_manual_verdicts_v0.1",
+            "qualification_record_draft_manual_verdicts": [
+                {
+                    "qualification_record_manual_review_status": "needs_revision",
+                    "qualification_record_id": "ASHARE-QUAL-603687.SH-2026-04-23-2026-06-29-v0.1",
+                    "ts_code": "603687.SH",
+                    "qualification_rule_id": "Q-PRESSURE-ADJUST",
+                },
+                {
+                    "qualification_record_id": "ASHARE-QUAL-000899.SZ-2026-04-23-2026-06-29-v0.1",
+                    "ts_code": "000899.SZ",
+                    "qualification_rule_id": "Q-PRESSURE-ADJUST",
+                },
+            ],
+        }
+
+        report = prepare_formal_qualification_record_write_audit(
+            manual_review_report,
+            generated_at="2026-06-30T15:35:00+08:00",
+        )
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertEqual(report["formal_record_write_audit_candidate_count"], 0)
+        self.assertEqual(report["formal_record_write_audit_hold_count"], 2)
+        self.assertEqual(report["next_action"], "action:hold_for_formal_qualification_record_write_audit_candidates")
+        by_id = {item["qualification_record_id"]: item for item in report["held_manual_review_results"]}
+        self.assertEqual(
+            by_id["ASHARE-QUAL-603687.SH-2026-04-23-2026-06-29-v0.1"]["formal_record_write_audit_reason"],
+            "manual_review_not_approved_for_formal_record_write_audit",
+        )
+        self.assertEqual(
+            by_id["ASHARE-QUAL-000899.SZ-2026-04-23-2026-06-29-v0.1"]["formal_record_write_audit_reason"],
+            "manual_review_not_approved_for_formal_record_write_audit",
+        )
+        payload = json.dumps(report, ensure_ascii=False)
+        self.assertFalse(report["qualification_record_write_allowed"])
+        self.assertFalse(report["candidate_table_update_allowed"])
+        self.assertFalse(report["trading_layer_read_allowed"])
+        self.assertFalse(report["formal_data_write_allowed"])
+        self.assertFalse(report["institution_rule_definition_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+        self.assertNotIn("action:write_qualification_record", payload)
+        self.assertNotIn("action:update_candidate_table", payload)
         self.assertFalse(any(field in payload for field in FORBIDDEN_FIELDS))
 
     def test_build_default_add_on_price_limit_shortlist_malf_research_prep_materializes_canonical_shortlist(self) -> None:

@@ -1263,6 +1263,70 @@ def apply_qualification_record_draft_manual_verdicts(
     )
 
 
+def prepare_formal_qualification_record_write_audit(
+    manual_review_report: dict[str, Any],
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    generated_at_value = generated_at or datetime.now().astimezone().isoformat(timespec="seconds")
+    audit_candidates: list[dict[str, Any]] = []
+    held_results: list[dict[str, Any]] = []
+    issues: list[str] = []
+
+    manual_results = manual_review_report.get("qualification_record_draft_manual_verdicts", [])
+    if not isinstance(manual_results, list) or not manual_results:
+        issues.append("qualification_record_draft_manual_verdicts_missing")
+        manual_results = []
+
+    for manual_result in manual_results:
+        if not isinstance(manual_result, dict):
+            issues.append("invalid_qualification_record_draft_manual_verdict")
+            continue
+        if (
+            manual_result.get("qualification_record_manual_review_status")
+            != "approved_for_formal_record_write_audit_candidate"
+        ):
+            held_results.append(
+                _held_formal_qualification_record_write_audit_result(
+                    manual_result,
+                    "manual_review_not_approved_for_formal_record_write_audit",
+                )
+            )
+            continue
+        audit_candidates.append(_formal_qualification_record_write_audit_candidate(manual_result, generated_at_value))
+
+    next_action = (
+        "action:manual_commit_formal_qualification_records_when_explicitly_requested"
+        if audit_candidates
+        else "action:hold_for_formal_qualification_record_write_audit_candidates"
+    )
+    if issues and not audit_candidates and not held_results:
+        next_action = "action:repair_formal_qualification_record_write_audit_input"
+
+    return _strip_forbidden_fields(
+        {
+            "result": "pass" if audit_candidates else "blocked",
+            "generated_at": generated_at_value,
+            "research_only": True,
+            "audit_id": "formal_qualification_record_write_audit_v0.1",
+            "source_review_id": manual_review_report.get("review_id"),
+            "formal_record_write_audit_candidate_count": len(audit_candidates),
+            "formal_record_write_audit_hold_count": len(held_results),
+            "formal_front_filter_ready_count": 0,
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "issues": issues,
+            "formal_record_write_audit_candidates": audit_candidates,
+            "held_manual_review_results": held_results,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": next_action,
+        }
+    )
+
+
 def materialize_default_add_on_price_limit_core_malf_research_bundle(
     data_root: str | Path,
     tdx_root: str | Path,
@@ -2644,6 +2708,65 @@ def _attach_qualification_record_draft_manual_verdict(
             "signal_generation_allowed": False,
             "backtest_execution_allowed": False,
             "next_action": next_action,
+        }
+    )
+
+
+def _formal_qualification_record_write_audit_candidate(
+    manual_result: dict[str, Any],
+    generated_at: str,
+) -> dict[str, Any]:
+    boundary_warning = list(manual_result.get("boundary_warning", []))
+    for item in [
+        "write_audit_is_not_record_write",
+        "explicit_commit_layer_required_before_formal_record_write",
+        "do_not_update_candidate_table_from_write_audit",
+        "do_not_open_trading_layer_read_from_write_audit",
+    ]:
+        if item not in boundary_warning:
+            boundary_warning.append(item)
+
+    return _strip_forbidden_fields(
+        {
+            **manual_result,
+            "formal_record_write_audit_status": "pass",
+            "formal_record_write_audit_reason": "manual_review_approved_and_boundary_gates_closed",
+            "source_manual_review_status": manual_result.get("qualification_record_manual_review_status"),
+            "formal_record_write_audited_at": generated_at,
+            "boundary_warning": boundary_warning,
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:manual_commit_formal_qualification_record_when_explicitly_requested",
+        }
+    )
+
+
+def _held_formal_qualification_record_write_audit_result(
+    manual_result: dict[str, Any],
+    reason: str,
+) -> dict[str, Any]:
+    return _strip_forbidden_fields(
+        {
+            "qualification_record_id": manual_result.get("qualification_record_id"),
+            "ts_code": manual_result.get("ts_code"),
+            "trade_date": manual_result.get("trade_date"),
+            "qualification_rule_id": manual_result.get("qualification_rule_id"),
+            "qualification_record_manual_review_status": manual_result.get("qualification_record_manual_review_status"),
+            "formal_record_write_audit_status": "hold",
+            "formal_record_write_audit_reason": reason,
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:hold_for_formal_qualification_record_write_audit_candidate",
         }
     )
 
