@@ -1,6 +1,6 @@
 # 06_Roadmap_TodoList — 后续路线图与待办
 
-**版本**: v0.2
+**版本**: v0.3
 **日期**: 2026-06-30
 **当前基线**: `candidate_table_update_audit_package_prepared`
 **文档性质**: 未来待办、路线图与优先级安排
@@ -65,11 +65,17 @@ python -m unittest discover -s tests
 
 目标：继续执行 post-label 窗口重筛，补齐四类样本覆盖。
 
-- [ ] 扩充 `meaningful` 样本。
-- [ ] 扩充 `limited` 样本。
-- [ ] 扩充 `unknown` 样本。
-- [ ] 扩充 `not_meaningful` 样本。
-- [ ] 复核行业标签时间对齐，避免未来标签污染历史窗口。
+- [x] `meaningful` 样本覆盖达标。
+- [x] `limited` 样本覆盖达标。
+- [x] `unknown` 样本覆盖达标。
+- [x] `not_meaningful` 样本覆盖达标。
+- [x] 复核行业标签时间对齐，避免未来标签污染历史窗口。
+
+当前机器审计要求四类 `rhythm_meaning` 至少各保留 2 条样本，并输出
+`sample_count_by_rhythm_meaning / missing_rhythm_meanings /
+undercovered_rhythm_meanings`，防止后续样本目录退化为只覆盖理由码、不覆盖四类语义。
+对带有 `sample_window_end / current_industry_valid_from` 的样本行，机器审计会阻断
+`current_industry_valid_from > sample_window_end` 的未来行业标签污染。
 
 边界：
 

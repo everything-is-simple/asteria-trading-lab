@@ -237,12 +237,76 @@ class TachibanaFrontFilterTest(unittest.TestCase):
         audit = audit_rhythm_sample_catalog(samples)
 
         self.assertEqual(audit["result"], "pass")
-        self.assertEqual(audit["sample_count"], 16)
-        self.assertEqual(audit["passed_sample_count"], 16)
+        self.assertEqual(audit["sample_count"], 18)
+        self.assertEqual(audit["passed_sample_count"], 18)
         self.assertEqual(audit["blocked_sample_count"], 0)
         self.assertEqual(audit["missing_rule_ids"], [])
+        self.assertEqual(audit["covered_rhythm_meanings"], [
+            "limited",
+            "meaningful",
+            "not_meaningful",
+            "unknown",
+        ])
+        self.assertEqual(audit["missing_rhythm_meanings"], [])
+        self.assertEqual(audit["sample_count_by_rhythm_meaning"]["meaningful"], 2)
+        self.assertEqual(audit["sample_count_by_rhythm_meaning"]["limited"], 10)
+        self.assertEqual(audit["sample_count_by_rhythm_meaning"]["unknown"], 2)
+        self.assertEqual(audit["sample_count_by_rhythm_meaning"]["not_meaningful"], 4)
+        self.assertEqual(audit["minimum_sample_count_by_rhythm_meaning"], {
+            "limited": 2,
+            "meaningful": 2,
+            "not_meaningful": 2,
+            "unknown": 2,
+        })
+        self.assertEqual(audit["undercovered_rhythm_meanings"], {})
         self.assertEqual(len(audit["covered_rule_ids"]), 16)
         self.assertEqual(audit["blocked_samples"], {})
+
+    def test_rhythm_sample_catalog_audit_blocks_undercovered_rhythm_meanings(self) -> None:
+        samples = get_rhythm_sample_catalog()
+        samples = {
+            sample_id: row
+            for sample_id, row in samples.items()
+            if row["rhythm_meaning"] != "unknown" or sample_id == "1976-09"
+        }
+
+        audit = audit_rhythm_sample_catalog(samples)
+
+        self.assertEqual(audit["result"], "blocked")
+        self.assertEqual(audit["sample_count_by_rhythm_meaning"]["unknown"], 1)
+        self.assertEqual(audit["undercovered_rhythm_meanings"], {
+            "unknown": {"actual": 1, "minimum": 2},
+        })
+        self.assertIn("unknown", audit["covered_rhythm_meanings"])
+        self.assertEqual(audit["missing_rhythm_meanings"], [])
+
+    def test_rhythm_sample_catalog_audit_blocks_future_industry_label_on_dated_samples(self) -> None:
+        samples = get_rhythm_sample_catalog()
+        samples["FUTURE-INDUSTRY-LABEL"] = {
+            **samples["1975-01"],
+            "sample_id": "FUTURE-INDUSTRY-LABEL",
+            "sample_window_start": "2026-04-25",
+            "sample_window_end": "2026-06-30",
+            "current_industry_valid_from": "2026-07-01",
+            "current_industry_valid_to": "",
+        }
+
+        audit = audit_rhythm_sample_catalog(samples)
+
+        self.assertEqual(audit["result"], "blocked")
+        self.assertEqual(audit["passed_sample_count"], 18)
+        self.assertEqual(audit["blocked_sample_count"], 1)
+        self.assertEqual(audit["industry_time_alignment_result"], "blocked")
+        self.assertEqual(audit["industry_time_alignment_blocked_count"], 1)
+        self.assertIn("FUTURE-INDUSTRY-LABEL", audit["industry_time_alignment_blocked_samples"])
+        self.assertIn(
+            "future_industry_label_valid_from_after_sample_window_end",
+            audit["industry_time_alignment_blocked_samples"]["FUTURE-INDUSTRY-LABEL"]["issues"],
+        )
+        self.assertIn(
+            "future_industry_label_valid_from_after_sample_window_end",
+            audit["blocked_samples"]["FUTURE-INDUSTRY-LABEL"]["issues"],
+        )
 
     def test_rhythm_sample_catalog_audit_reports_blocked_rows(self) -> None:
         samples = get_rhythm_sample_catalog()
@@ -256,7 +320,7 @@ class TachibanaFrontFilterTest(unittest.TestCase):
         audit = audit_rhythm_sample_catalog(samples)
 
         self.assertEqual(audit["result"], "blocked")
-        self.assertEqual(audit["sample_count"], 17)
+        self.assertEqual(audit["sample_count"], 19)
         self.assertEqual(audit["blocked_sample_count"], 1)
         self.assertIn("BAD-MEANINGFUL", audit["blocked_samples"])
         self.assertIn(
@@ -282,9 +346,11 @@ class TachibanaFrontFilterTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         report = json.loads(completed.stdout)
         self.assertEqual(report["result"], "pass")
-        self.assertEqual(report["sample_count"], 16)
+        self.assertEqual(report["sample_count"], 18)
         self.assertEqual(report["blocked_sample_count"], 0)
         self.assertEqual(report["missing_rule_ids"], [])
+        self.assertEqual(report["missing_rhythm_meanings"], [])
+        self.assertEqual(report["undercovered_rhythm_meanings"], {})
 
     def test_method_pm_action_catalog_audit_covers_actions_and_blocks_malf_generation(self) -> None:
         method_catalog = get_method_action_catalog()

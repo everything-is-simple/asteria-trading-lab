@@ -328,6 +328,12 @@ APPPLICABILITY_BY_RHYTHM = {
     "not_meaningful": "unsuitable",
     "unknown": "unknown",
 }
+MINIMUM_SAMPLE_COUNT_BY_RHYTHM_MEANING = {
+    "meaningful": 2,
+    "limited": 2,
+    "not_meaningful": 2,
+    "unknown": 2,
+}
 LIMITED_REQUIRED_RULES = {
     "Q-ALIVE-PM-MIXED",
     "Q-EXTREME-ADDON",
@@ -518,6 +524,25 @@ RHYTHM_SAMPLE_CATALOG = {
         ],
         "evidence_level": ["E4_research_mapping"],
     },
+    "1975-02": {
+        "sample_id": "1975-02",
+        "source_scope": "historical_review",
+        "source_anchor": "docs/tachibana/monthly/1975-02.md",
+        "snapshot_quality_status": "ready",
+        "malf_snapshot_ref": None,
+        "malf_background": "alive_wave",
+        "qualification_rule_id": "Q-ALIVE-CLEAN",
+        "rhythm_meaning": "meaningful",
+        "tachibana_applicability": "suitable",
+        "pm_complexity": "none",
+        "pm_required": False,
+        "meaning_reason": ["structure_clean_alive_wave", "rhythm_meaning_meaningful"],
+        "boundary_warning": [
+            "do_not_infer_position_size_from_malf",
+            "do_not_convert_rhythm_meaning_to_signal_accept",
+        ],
+        "evidence_level": ["E4_research_mapping"],
+    },
     "RULE-SAMPLE-Q-ALIVE-PM-MIXED": {
         "sample_id": "RULE-SAMPLE-Q-ALIVE-PM-MIXED",
         "source_scope": "synthetic_rule_fixture",
@@ -693,6 +718,22 @@ RHYTHM_SAMPLE_CATALOG = {
         "meaning_reason": ["source_disrupted_keep_unknown", "rhythm_meaning_unknown"],
         "boundary_warning": ["do_not_mix_unit_change_ex_rights_and_structure_qualification"],
         "evidence_level": ["E2_trade_fact", "E3_source_audit"],
+    },
+    "RULE-SAMPLE-Q-SOURCE-DISRUPTED-FIXTURE": {
+        "sample_id": "RULE-SAMPLE-Q-SOURCE-DISRUPTED-FIXTURE",
+        "source_scope": "synthetic_rule_fixture",
+        "source_anchor": "docs/tachibana/index/MALF-立花1976-09制度资料口径审计-v0.1.md",
+        "snapshot_quality_status": "ready",
+        "malf_snapshot_ref": "fixture:not-real",
+        "malf_background": "unknown",
+        "qualification_rule_id": "Q-SOURCE-DISRUPTED",
+        "rhythm_meaning": "unknown",
+        "tachibana_applicability": "unknown",
+        "pm_complexity": "high",
+        "pm_required": False,
+        "meaning_reason": ["source_disrupted_keep_unknown", "rhythm_meaning_unknown"],
+        "boundary_warning": ["source_disrupted_keep_unknown"],
+        "evidence_level": ["E3_source_audit", "E4_research_mapping"],
     },
     "NM-NO-STRUCTURE-FIXTURE": {
         "sample_id": "NM-NO-STRUCTURE-FIXTURE",
@@ -981,29 +1022,97 @@ def audit_rhythm_sample_catalog(samples: dict[str, dict[str, Any]] | None = None
         samples = get_rhythm_sample_catalog()
 
     blocked_samples: dict[str, dict[str, Any]] = {}
+    industry_time_alignment_blocked_samples: dict[str, dict[str, Any]] = {}
     passed_sample_count = 0
     covered_rule_ids = set()
+    sample_count_by_rhythm_meaning = {rhythm_meaning: 0 for rhythm_meaning in sorted(RHYTHM_MEANING_VALUES)}
     for sample_id, row in samples.items():
         row_with_id = {**row, "sample_id": row.get("sample_id", sample_id)}
         qualification_rule_id = row_with_id.get("qualification_rule_id")
         if qualification_rule_id:
             covered_rule_ids.add(str(qualification_rule_id))
+        rhythm_meaning = row_with_id.get("rhythm_meaning")
+        if rhythm_meaning in sample_count_by_rhythm_meaning:
+            sample_count_by_rhythm_meaning[str(rhythm_meaning)] += 1
         gate = audit_rhythm_sample_row_gate(row_with_id)
-        if gate["result"] == "pass":
+        industry_time_alignment = _audit_sample_industry_time_alignment(row_with_id)
+        if gate["result"] == "pass" and industry_time_alignment["result"] == "pass":
             passed_sample_count += 1
         else:
             blocked_samples[sample_id] = gate
+        if industry_time_alignment["result"] != "pass":
+            industry_time_alignment_blocked_samples[sample_id] = industry_time_alignment
+            blocked_samples[sample_id] = {
+                **gate,
+                "result": "blocked",
+                "issues": [
+                    *gate.get("issues", []),
+                    *industry_time_alignment.get("issues", []),
+                ],
+            }
 
     missing_rule_ids = sorted(set(QUALIFICATION_RULE_CATALOG).difference(covered_rule_ids))
+    covered_rhythm_meanings = sorted(
+        rhythm_meaning
+        for rhythm_meaning, count in sample_count_by_rhythm_meaning.items()
+        if count > 0
+    )
+    missing_rhythm_meanings = sorted(RHYTHM_MEANING_VALUES.difference(covered_rhythm_meanings))
+    undercovered_rhythm_meanings = {
+        rhythm_meaning: {
+            "actual": sample_count_by_rhythm_meaning[rhythm_meaning],
+            "minimum": minimum_count,
+        }
+        for rhythm_meaning, minimum_count in MINIMUM_SAMPLE_COUNT_BY_RHYTHM_MEANING.items()
+        if sample_count_by_rhythm_meaning[rhythm_meaning] < minimum_count
+    }
+    industry_time_alignment_result = "pass" if not industry_time_alignment_blocked_samples else "blocked"
     sample_count = len(samples)
     return {
-        "result": "pass" if not blocked_samples and not missing_rule_ids else "blocked",
+        "result": (
+            "pass"
+            if not blocked_samples
+            and not missing_rule_ids
+            and not missing_rhythm_meanings
+            and not undercovered_rhythm_meanings
+            and industry_time_alignment_result == "pass"
+            else "blocked"
+        ),
         "sample_count": sample_count,
         "passed_sample_count": passed_sample_count,
         "blocked_sample_count": len(blocked_samples),
+        "industry_time_alignment_result": industry_time_alignment_result,
+        "industry_time_alignment_blocked_count": len(industry_time_alignment_blocked_samples),
+        "industry_time_alignment_blocked_samples": industry_time_alignment_blocked_samples,
+        "sample_count_by_rhythm_meaning": sample_count_by_rhythm_meaning,
+        "minimum_sample_count_by_rhythm_meaning": dict(sorted(MINIMUM_SAMPLE_COUNT_BY_RHYTHM_MEANING.items())),
+        "covered_rhythm_meanings": covered_rhythm_meanings,
+        "missing_rhythm_meanings": missing_rhythm_meanings,
+        "undercovered_rhythm_meanings": undercovered_rhythm_meanings,
         "covered_rule_ids": sorted(covered_rule_ids),
         "missing_rule_ids": missing_rule_ids,
         "blocked_samples": blocked_samples,
+    }
+
+
+def _audit_sample_industry_time_alignment(row: dict[str, Any]) -> dict[str, Any]:
+    sample_window_end = str(row.get("sample_window_end") or row.get("window_end") or "")
+    industry_valid_from = str(row.get("current_industry_valid_from") or row.get("industry_valid_from") or "")
+    industry_valid_to = str(row.get("current_industry_valid_to") or row.get("industry_valid_to") or "")
+    issues: list[str] = []
+
+    if sample_window_end and industry_valid_from and industry_valid_from > sample_window_end:
+        issues.append("future_industry_label_valid_from_after_sample_window_end")
+    if industry_valid_from and industry_valid_to and industry_valid_to < industry_valid_from:
+        issues.append("industry_label_valid_to_before_valid_from")
+
+    return {
+        "result": "pass" if not issues else "blocked",
+        "sample_id": row.get("sample_id"),
+        "sample_window_end": sample_window_end or None,
+        "current_industry_valid_from": industry_valid_from or None,
+        "current_industry_valid_to": industry_valid_to or None,
+        "issues": issues,
     }
 
 
