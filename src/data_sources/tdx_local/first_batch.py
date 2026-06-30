@@ -5,6 +5,7 @@ from copy import deepcopy
 from datetime import datetime
 import json
 from pathlib import Path
+import shutil
 import tempfile
 from typing import Any
 
@@ -1589,6 +1590,130 @@ def write_qualification_records_to_staging_when_explicitly_requested(
             "signal_generation_allowed": False,
             "backtest_execution_allowed": False,
             "next_action": "action:hold_for_candidate_table_update_staging_review",
+        }
+    )
+
+
+def update_candidate_table_from_staged_qualification_records_when_explicitly_requested(
+    qualification_record_staging_manifest_path: str | Path,
+    candidate_table_staging_root: str | Path,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    generated_at_value = generated_at or datetime.now().astimezone().isoformat(timespec="seconds")
+    manifest_path = Path(qualification_record_staging_manifest_path)
+    issues: list[str] = []
+    held_items: list[dict[str, Any]] = []
+
+    manifest = _read_json_file(manifest_path)
+    if manifest is None:
+        issues.append("qualification_record_staging_manifest_unreadable")
+        return _candidate_table_staging_blocked_report(generated_at_value, issues, held_items)
+
+    _validate_qualification_record_staging_manifest(manifest, issues)
+    record_files = manifest.get("record_files", [])
+    if not isinstance(record_files, list) or not record_files:
+        issues.append("qualification_record_staging_manifest_record_files_missing")
+        record_files = []
+
+    rows: list[dict[str, Any]] = []
+    seen_record_ids: set[str] = set()
+    manifest_root = manifest_path.parent
+    for record_file in record_files:
+        if not isinstance(record_file, str) or not record_file:
+            issues.append("qualification_record_staging_record_file_invalid")
+            continue
+
+        record_path = manifest_root / record_file
+        record = _read_json_file(record_path)
+        if record is None:
+            issues.append("qualification_record_staging_record_unreadable")
+            continue
+
+        forbidden_field = _first_forbidden_output_field_present(record)
+        if forbidden_field is not None:
+            held_items.append(
+                _held_candidate_table_update_item(
+                    record,
+                    "candidate_table_forbidden_output_field_present",
+                )
+            )
+            continue
+
+        _validate_staged_qualification_record(record, issues)
+        qualification_record_id = str(record.get("qualification_record_id") or "")
+        if qualification_record_id in seen_record_ids:
+            issues.append("candidate_table_duplicate_qualification_record_id")
+            continue
+        seen_record_ids.add(qualification_record_id)
+
+        rows.append(_candidate_table_staging_row(record, manifest, record_file, generated_at_value))
+
+    if issues or held_items or not rows:
+        return _candidate_table_staging_blocked_report(generated_at_value, issues, held_items)
+
+    candidate_root = Path(candidate_table_staging_root)
+    table_root = candidate_root / "candidate-table-v0.1"
+    existing_rows = _read_candidate_table_jsonl(table_root / "candidate-table-draft.jsonl")
+    deduplicated_existing_row_count = 0
+    if existing_rows is None:
+        issues.append("candidate_table_existing_jsonl_unreadable")
+    elif existing_rows:
+        existing_index = {str(row.get("qualification_record_id") or ""): row for row in existing_rows}
+        merged_rows = list(existing_rows)
+        for row in rows:
+            key = str(row.get("qualification_record_id") or "")
+            existing_row = existing_index.get(key)
+            if existing_row is None:
+                merged_rows.append(row)
+                continue
+            if _candidate_table_row_merge_identity(existing_row) != _candidate_table_row_merge_identity(row):
+                issues.append("candidate_table_merge_conflict")
+                continue
+            deduplicated_existing_row_count += 1
+        rows = merged_rows
+
+    if issues:
+        return _candidate_table_staging_blocked_report(generated_at_value, issues, held_items)
+
+    tmp_root = table_root.with_name(f"{table_root.name}.__tmp__")
+    if tmp_root.exists():
+        shutil.rmtree(tmp_root)
+
+    try:
+        tmp_root.mkdir(parents=True)
+        _write_jsonl(tmp_root / "candidate-table-draft.jsonl", rows)
+        manifest_payload = _candidate_table_staging_manifest(manifest, rows, generated_at_value)
+        _write_json_atomic(tmp_root / "manifest.json", manifest_payload)
+        if table_root.exists():
+            shutil.rmtree(table_root)
+        tmp_root.rename(table_root)
+    except Exception:
+        if tmp_root.exists():
+            shutil.rmtree(tmp_root)
+        raise
+
+    return _strip_forbidden_fields(
+        {
+            "result": "pass",
+            "generated_at": generated_at_value,
+            "research_only": True,
+            "package_id": "candidate_table_staging_update_v0.1",
+            "source_qualification_record_manifest_id": manifest.get("manifest_id"),
+            "candidate_table_manifest_file": str(table_root / "manifest.json"),
+            "candidate_table_file": str(table_root / "candidate-table-draft.jsonl"),
+            "candidate_table_row_count": len(rows),
+            "held_candidate_table_update_count": 0,
+            "candidate_table_deduplicated_existing_row_count": deduplicated_existing_row_count,
+            "candidate_table_update_performed": True,
+            "candidate_table_update_target": "staging",
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:review_staged_candidate_table_before_formal_data_root_write",
         }
     )
 
@@ -3303,6 +3428,180 @@ def _qualification_record_staging_manifest(
     )
 
 
+def _validate_qualification_record_staging_manifest(manifest: dict[str, Any], issues: list[str]) -> None:
+    if manifest.get("manifest_id") != "qualification_record_staging_manifest_v0.1":
+        issues.append("qualification_record_staging_manifest_invalid")
+    if manifest.get("qualification_record_persistence_performed") is not True:
+        issues.append("qualification_record_staging_manifest_persistence_not_performed")
+    if manifest.get("qualification_record_persistence_target") != "staging":
+        issues.append("qualification_record_staging_manifest_target_not_staging")
+    if manifest.get("candidate_table_update_performed") is not False:
+        issues.append("qualification_record_staging_manifest_candidate_table_update_already_performed")
+    if manifest.get("candidate_table_update_allowed") is not False:
+        issues.append("qualification_record_staging_manifest_candidate_table_update_allowed")
+    for field in ["trading_layer_read_allowed", "signal_generation_allowed", "backtest_execution_allowed"]:
+        if manifest.get(field) is not False:
+            issues.append(f"qualification_record_staging_manifest_{field}_must_be_false")
+
+
+def _validate_staged_qualification_record(record: dict[str, Any], issues: list[str]) -> None:
+    if record.get("qualification_record_status") != "formal_record_persisted_to_staging":
+        issues.append("qualification_record_staging_record_status_invalid")
+    if record.get("qualification_record_persistence_performed") is not True:
+        issues.append("qualification_record_staging_record_persistence_not_performed")
+    if record.get("qualification_record_persistence_target") != "staging":
+        issues.append("qualification_record_staging_record_target_not_staging")
+    if record.get("candidate_table_update_performed") is not False:
+        issues.append("qualification_record_staging_record_candidate_table_update_already_performed")
+    if not record.get("qualification_record_id"):
+        issues.append("qualification_record_staging_record_id_missing")
+    for field in ["candidate_table_update_allowed", "trading_layer_read_allowed", "signal_generation_allowed", "backtest_execution_allowed"]:
+        if record.get(field) is not False:
+            issues.append(f"qualification_record_staging_record_{field}_must_be_false")
+
+
+def _candidate_table_staging_row(
+    record: dict[str, Any],
+    manifest: dict[str, Any],
+    source_record_file: str,
+    generated_at: str,
+) -> dict[str, Any]:
+    qualification_record_id = str(record.get("qualification_record_id") or "")
+    boundary_warning = list(record.get("boundary_warning", []))
+    for item in [
+        "candidate_table_staging_is_not_formal_data_root_write",
+        "candidate_table_staging_does_not_open_trading_layer",
+        "formal_data_root_write_requires_separate_review",
+    ]:
+        if item not in boundary_warning:
+            boundary_warning.append(item)
+
+    return _strip_forbidden_fields(
+        {
+            "candidate_table_row_id": f"CANDIDATE-TABLE-ROW::{qualification_record_id}",
+            "candidate_table_row_status": "staged_candidate_table_row",
+            "qualification_record_id": qualification_record_id,
+            "ashare_sample_id": record.get("ashare_sample_id"),
+            "ts_code": record.get("ts_code"),
+            "symbol_name": record.get("symbol_name"),
+            "sample_window_start": record.get("sample_window_start"),
+            "sample_window_end": record.get("sample_window_end"),
+            "qualification_rule_id": record.get("qualification_rule_id"),
+            "rhythm_meaning": record.get("rhythm_meaning"),
+            "tachibana_applicability": record.get("tachibana_applicability"),
+            "source_qualification_record_manifest_id": manifest.get("manifest_id"),
+            "source_qualification_record_file": source_record_file,
+            "candidate_table_updated_at": generated_at,
+            "candidate_table_update_performed": True,
+            "candidate_table_update_target": "staging",
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "boundary_warning": boundary_warning,
+            "next_action": "action:review_staged_candidate_table_before_formal_data_root_write",
+        }
+    )
+
+
+def _candidate_table_staging_manifest(
+    qualification_record_manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+    generated_at: str,
+) -> dict[str, Any]:
+    return _strip_forbidden_fields(
+        {
+            "manifest_id": "candidate_table_staging_manifest_v0.1",
+            "generated_at": generated_at,
+            "source_qualification_record_manifest_id": qualification_record_manifest.get("manifest_id"),
+            "candidate_table_row_count": len(rows),
+            "candidate_table_files": ["candidate-table-draft.jsonl"],
+            "candidate_table_update_performed": True,
+            "candidate_table_update_target": "staging",
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:review_staged_candidate_table_before_formal_data_root_write",
+        }
+    )
+
+
+def _candidate_table_row_merge_identity(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "qualification_record_id": row.get("qualification_record_id"),
+        "ashare_sample_id": row.get("ashare_sample_id"),
+        "ts_code": row.get("ts_code"),
+        "symbol_name": row.get("symbol_name"),
+        "sample_window_start": row.get("sample_window_start"),
+        "sample_window_end": row.get("sample_window_end"),
+        "qualification_rule_id": row.get("qualification_rule_id"),
+        "rhythm_meaning": row.get("rhythm_meaning"),
+        "tachibana_applicability": row.get("tachibana_applicability"),
+        "source_qualification_record_manifest_id": row.get("source_qualification_record_manifest_id"),
+        "source_qualification_record_file": row.get("source_qualification_record_file"),
+    }
+
+
+def _held_candidate_table_update_item(record: dict[str, Any], reason: str) -> dict[str, Any]:
+    return _strip_forbidden_fields(
+        {
+            "qualification_record_id": record.get("qualification_record_id"),
+            "ts_code": record.get("ts_code"),
+            "qualification_rule_id": record.get("qualification_rule_id"),
+            "candidate_table_update_status": "hold",
+            "candidate_table_update_reason": reason,
+            "candidate_table_update_performed": False,
+            "candidate_table_update_target": "staging",
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:repair_staged_candidate_table_update_inputs",
+        }
+    )
+
+
+def _candidate_table_staging_blocked_report(
+    generated_at: str,
+    issues: list[str],
+    held_items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if not issues and not held_items:
+        issues = ["candidate_table_staging_rows_missing"]
+    return _strip_forbidden_fields(
+        {
+            "result": "blocked",
+            "generated_at": generated_at,
+            "research_only": True,
+            "package_id": "candidate_table_staging_update_v0.1",
+            "issues": issues,
+            "candidate_table_row_count": 0,
+            "held_candidate_table_update_count": len(held_items),
+            "held_candidate_table_update_items": held_items,
+            "candidate_table_deduplicated_existing_row_count": 0,
+            "candidate_table_update_performed": False,
+            "candidate_table_update_target": "staging",
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:repair_staged_candidate_table_update_inputs",
+        }
+    )
+
+
 def _reviewed_snapshot_candidate(candidate: dict[str, Any], verdict: dict[str, Any], generated_at: str) -> dict[str, Any] | None:
     draft = candidate.get("suggested_snapshot_draft")
     if not isinstance(draft, dict):
@@ -3465,6 +3764,39 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     temp_path = path.with_name(f"{path.name}.tmp")
     temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     temp_path.replace(path)
+
+
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows)
+    path.write_text(payload, encoding="utf-8")
+
+
+def _read_json_file(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _read_candidate_table_jsonl(path: Path) -> list[dict[str, Any]] | None:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if not isinstance(row, dict):
+                return None
+            rows.append(row)
+    except (OSError, json.JSONDecodeError):
+        return None
+    return rows
 
 
 def _safe_json_file_stem(value: str) -> str:

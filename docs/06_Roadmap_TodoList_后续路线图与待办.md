@@ -1,8 +1,8 @@
 # 06_Roadmap_TodoList — 后续路线图与待办
 
-**版本**: v0.5
+**版本**: v0.6
 **日期**: 2026-06-30
-**当前基线**: `qualification_record_staging_persistence_performed`
+**当前基线**: `candidate_table_staging_update_performed`
 **文档性质**: 未来待办、路线图与优先级安排
 
 ## 1. 当前基线
@@ -15,7 +15,8 @@
 - 已完成 M1：`prepare_candidate_table_update_audit_when_explicitly_requested`。
 - 已生成 candidate table update audit package。
 - 已生成 staging qualification record manifest 与 records。
-- 尚未真实更新 candidate table。
+- 已生成 staging candidate table draft JSONL 与 manifest。
+- 尚未真实更新正式 `data_root` candidate table。
 - 尚未写入正式 `data_root`。
 - 尚未开放 trading layer。
 - 尚未开放 signal generation 或 backtest execution。
@@ -135,13 +136,14 @@ P4a 已完成项：
 
 P4b 已完成设计：
 
-- 入口草案：`update_candidate_table_from_staged_qualification_records_when_explicitly_requested`
+- 入口：`update_candidate_table_from_staged_qualification_records_when_explicitly_requested`
 - 推荐格式：`candidate-table-draft.jsonl` + `manifest.json`
 - 推荐路径：调用方传入的 candidate table staging root。
 - merge key：`qualification_record_id`
 - 重复处理：同一 manifest 内重复 key 阻断；既有 staging 表同 key 不一致时阻断。
 - rollback：先写临时目录，完成后替换，manifest 最后可见。
-- 边界：P4b 设计不等于实现，尚未真实更新 candidate table。
+- 边界：P4b staging 实现已完成，尚未真实更新正式 `data_root` candidate table。
+- 验证：`tests.test_tdx_local_first_batch` 覆盖 pass / blocked manifest / forbidden field / duplicate key / idempotent rewrite。
 
 ## 7. P5：制度规则定义
 

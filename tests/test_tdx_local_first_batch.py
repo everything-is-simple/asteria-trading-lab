@@ -38,6 +38,7 @@ from data_sources.tdx_local import (
     build_shortlist_malf_research_prep,
     build_shortlist_sample_package,
     default_add_on_price_limit_shortlist_sample_entries,
+    update_candidate_table_from_staged_qualification_records_when_explicitly_requested,
     write_qualification_records_to_staging_when_explicitly_requested,
 )
 from tachibana_front_filter import run_front_filter
@@ -62,6 +63,44 @@ def write_day_records(path: Path, records: list[tuple[int, int, int, int, int, f
 
 
 class TdxLocalFirstBatchTest(unittest.TestCase):
+    def _write_single_staged_qualification_record(self, staging_root: Path) -> Path:
+        audit_report = {
+            "result": "pass",
+            "research_only": True,
+            "audit_id": "candidate_table_update_audit_package_v0.1",
+            "candidate_table_update_audit_result": "pass",
+            "candidate_table_update_package_prepared": True,
+            "candidate_table_update_performed": False,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "candidate_table_update_audit_packages": [
+                {
+                    "candidate_table_update_audit_result": "pass",
+                    "qualification_record_status": "formal_record_ready_for_persistence",
+                    "qualification_record_id": "ASHARE-QUAL-600310.SH-2026-04-23-2026-06-29-v0.1",
+                    "ashare_sample_id": "ASHARE-ADDON-600310-20260605",
+                    "ts_code": "600310.SH",
+                    "symbol_name": "桂东电力",
+                    "sample_window_start": "2026-04-23",
+                    "sample_window_end": "2026-06-29",
+                    "qualification_rule_id": "Q-PRESSURE-ADJUST",
+                    "rhythm_meaning": "limited",
+                    "tachibana_applicability": "conditional",
+                    "source_qualification_record_persistence_performed": False,
+                    "candidate_table_update_package_prepared": True,
+                    "candidate_table_update_performed": False,
+                    "candidate_table_update_allowed": False,
+                    "trading_layer_read_allowed": False,
+                }
+            ],
+        }
+        write_qualification_records_to_staging_when_explicitly_requested(
+            audit_report,
+            staging_root=staging_root,
+            generated_at="2026-06-30T21:00:00+08:00",
+        )
+        return staging_root / "qualification-records-v0.1" / "manifest.json"
+
     def test_default_add_on_price_limit_shortlist_sample_entries_keeps_core_four_and_backup_two_split(self) -> None:
         entries = default_add_on_price_limit_shortlist_sample_entries()
 
@@ -1850,6 +1889,227 @@ class TdxLocalFirstBatchTest(unittest.TestCase):
         payload = json.dumps(report, ensure_ascii=False)
         self.assertNotIn("trade_accept", payload)
         self.assertFalse(any(field in payload for field in FORBIDDEN_FIELDS))
+
+    def test_update_candidate_table_from_staged_qualification_records_when_explicitly_requested_writes_jsonl_and_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest_path = self._write_single_staged_qualification_record(root / "qualification-staging")
+            candidate_staging_root = root / "candidate-staging"
+
+            report = update_candidate_table_from_staged_qualification_records_when_explicitly_requested(
+                qualification_record_staging_manifest_path=manifest_path,
+                candidate_table_staging_root=candidate_staging_root,
+                generated_at="2026-06-30T22:00:00+08:00",
+            )
+            table_root = candidate_staging_root / "candidate-table-v0.1"
+            manifest = json.loads((table_root / "manifest.json").read_text(encoding="utf-8"))
+            rows = [
+                json.loads(line)
+                for line in (table_root / "candidate-table-draft.jsonl").read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            tmp_dirs = list(candidate_staging_root.glob("candidate-table-v0.1.__tmp__"))
+
+        self.assertEqual(report["result"], "pass")
+        self.assertTrue(report["candidate_table_update_performed"])
+        self.assertEqual(report["candidate_table_update_target"], "staging")
+        self.assertEqual(report["candidate_table_row_count"], 1)
+        self.assertEqual(report["candidate_table_deduplicated_existing_row_count"], 0)
+        self.assertFalse(report["candidate_table_update_allowed"])
+        self.assertFalse(report["trading_layer_read_allowed"])
+        self.assertFalse(report["formal_data_write_allowed"])
+        self.assertFalse(report["institution_rule_definition_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+        self.assertEqual(report["next_action"], "action:review_staged_candidate_table_before_formal_data_root_write")
+        self.assertEqual(manifest["manifest_id"], "candidate_table_staging_manifest_v0.1")
+        self.assertEqual(manifest["source_qualification_record_manifest_id"], "qualification_record_staging_manifest_v0.1")
+        self.assertEqual(manifest["candidate_table_row_count"], 1)
+        self.assertEqual(manifest["candidate_table_files"], ["candidate-table-draft.jsonl"])
+        self.assertTrue(manifest["candidate_table_update_performed"])
+        self.assertEqual(manifest["candidate_table_update_target"], "staging")
+        self.assertFalse(manifest["candidate_table_update_allowed"])
+        self.assertFalse(manifest["trading_layer_read_allowed"])
+        self.assertFalse(manifest["signal_generation_allowed"])
+        self.assertFalse(manifest["backtest_execution_allowed"])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(
+            rows[0]["candidate_table_row_id"],
+            "CANDIDATE-TABLE-ROW::ASHARE-QUAL-600310.SH-2026-04-23-2026-06-29-v0.1",
+        )
+        self.assertEqual(rows[0]["candidate_table_row_status"], "staged_candidate_table_row")
+        self.assertEqual(rows[0]["qualification_record_id"], "ASHARE-QUAL-600310.SH-2026-04-23-2026-06-29-v0.1")
+        self.assertEqual(rows[0]["candidate_table_updated_at"], "2026-06-30T22:00:00+08:00")
+        self.assertTrue(rows[0]["candidate_table_update_performed"])
+        self.assertEqual(rows[0]["candidate_table_update_target"], "staging")
+        self.assertFalse(rows[0]["candidate_table_update_allowed"])
+        self.assertFalse(rows[0]["trading_layer_read_allowed"])
+        self.assertFalse(rows[0]["signal_generation_allowed"])
+        self.assertFalse(rows[0]["backtest_execution_allowed"])
+        self.assertFalse(tmp_dirs)
+        payload = json.dumps({"report": report, "manifest": manifest, "rows": rows}, ensure_ascii=False)
+        self.assertNotIn("action:read_trading_layer", payload)
+        self.assertNotIn("action:generate_signal", payload)
+        self.assertFalse(any(field in payload for field in FORBIDDEN_FIELDS))
+
+    def test_update_candidate_table_from_staged_qualification_records_when_explicitly_requested_blocks_bad_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest_path = root / "qualification-staging" / "qualification-records-v0.1" / "manifest.json"
+            manifest_path.parent.mkdir(parents=True)
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "manifest_id": "bad_manifest",
+                        "qualification_record_persistence_performed": True,
+                        "qualification_record_persistence_target": "staging",
+                        "candidate_table_update_performed": False,
+                        "candidate_table_update_allowed": False,
+                        "record_files": [],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            candidate_staging_root = root / "candidate-staging"
+
+            report = update_candidate_table_from_staged_qualification_records_when_explicitly_requested(
+                qualification_record_staging_manifest_path=manifest_path,
+                candidate_table_staging_root=candidate_staging_root,
+                generated_at="2026-06-30T22:05:00+08:00",
+            )
+
+            self.assertFalse((candidate_staging_root / "candidate-table-v0.1").exists())
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertFalse(report["candidate_table_update_performed"])
+        self.assertIn("qualification_record_staging_manifest_invalid", report["issues"])
+        self.assertFalse(report["candidate_table_update_allowed"])
+        self.assertFalse(report["trading_layer_read_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+
+    def test_update_candidate_table_from_staged_qualification_records_when_explicitly_requested_blocks_forbidden_record_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            qualification_root = root / "qualification-staging"
+            manifest_path = self._write_single_staged_qualification_record(qualification_root)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            record_path = qualification_root / "qualification-records-v0.1" / manifest["record_files"][0]
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            record["trade_accept"] = True
+            record_path.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            candidate_staging_root = root / "candidate-staging"
+
+            report = update_candidate_table_from_staged_qualification_records_when_explicitly_requested(
+                qualification_record_staging_manifest_path=manifest_path,
+                candidate_table_staging_root=candidate_staging_root,
+                generated_at="2026-06-30T22:10:00+08:00",
+            )
+
+            self.assertFalse((candidate_staging_root / "candidate-table-v0.1").exists())
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertFalse(report["candidate_table_update_performed"])
+        self.assertEqual(report["held_candidate_table_update_count"], 1)
+        self.assertEqual(
+            report["held_candidate_table_update_items"][0]["candidate_table_update_reason"],
+            "candidate_table_forbidden_output_field_present",
+        )
+        payload = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn("trade_accept", payload)
+        self.assertFalse(any(field in payload for field in FORBIDDEN_FIELDS))
+
+    def test_update_candidate_table_from_staged_qualification_records_when_explicitly_requested_blocks_duplicate_record_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            qualification_root = root / "qualification-staging"
+            manifest_path = self._write_single_staged_qualification_record(qualification_root)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            source_record = qualification_root / "qualification-records-v0.1" / manifest["record_files"][0]
+            duplicate_record = qualification_root / "qualification-records-v0.1" / "records" / "duplicate.json"
+            duplicate_record.write_text(source_record.read_text(encoding="utf-8"), encoding="utf-8")
+            manifest["record_files"].append("records/duplicate.json")
+            manifest["qualification_record_count"] = 2
+            manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            candidate_staging_root = root / "candidate-staging"
+
+            report = update_candidate_table_from_staged_qualification_records_when_explicitly_requested(
+                qualification_record_staging_manifest_path=manifest_path,
+                candidate_table_staging_root=candidate_staging_root,
+                generated_at="2026-06-30T22:15:00+08:00",
+            )
+
+            self.assertFalse((candidate_staging_root / "candidate-table-v0.1").exists())
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertFalse(report["candidate_table_update_performed"])
+        self.assertIn("candidate_table_duplicate_qualification_record_id", report["issues"])
+        self.assertFalse(report["candidate_table_update_allowed"])
+        self.assertFalse(report["trading_layer_read_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+
+    def test_update_candidate_table_from_staged_qualification_records_when_explicitly_requested_rewrites_idempotently_without_tmp_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest_path = self._write_single_staged_qualification_record(root / "qualification-staging")
+            candidate_staging_root = root / "candidate-staging"
+
+            first_report = update_candidate_table_from_staged_qualification_records_when_explicitly_requested(
+                qualification_record_staging_manifest_path=manifest_path,
+                candidate_table_staging_root=candidate_staging_root,
+                generated_at="2026-06-30T22:20:00+08:00",
+            )
+            second_report = update_candidate_table_from_staged_qualification_records_when_explicitly_requested(
+                qualification_record_staging_manifest_path=manifest_path,
+                candidate_table_staging_root=candidate_staging_root,
+                generated_at="2026-06-30T22:25:00+08:00",
+            )
+            table_root = candidate_staging_root / "candidate-table-v0.1"
+            manifest = json.loads((table_root / "manifest.json").read_text(encoding="utf-8"))
+            tmp_dirs = list(candidate_staging_root.glob("candidate-table-v0.1.__tmp__"))
+            table_root_exists = table_root.exists()
+
+        self.assertEqual(first_report["result"], "pass")
+        self.assertEqual(second_report["result"], "pass")
+        self.assertTrue(table_root_exists)
+        self.assertEqual(manifest["candidate_table_row_count"], 1)
+        self.assertFalse(tmp_dirs)
+
+    def test_update_candidate_table_from_staged_qualification_records_when_explicitly_requested_blocks_existing_row_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest_path = self._write_single_staged_qualification_record(root / "qualification-staging")
+            candidate_staging_root = root / "candidate-staging"
+
+            first_report = update_candidate_table_from_staged_qualification_records_when_explicitly_requested(
+                qualification_record_staging_manifest_path=manifest_path,
+                candidate_table_staging_root=candidate_staging_root,
+                generated_at="2026-06-30T22:30:00+08:00",
+            )
+            table_root = candidate_staging_root / "candidate-table-v0.1"
+            table_file = table_root / "candidate-table-draft.jsonl"
+            rows = [json.loads(line) for line in table_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+            rows[0]["qualification_rule_id"] = "Q-CONFLICT"
+            table_file.write_text(json.dumps(rows[0], ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+
+            second_report = update_candidate_table_from_staged_qualification_records_when_explicitly_requested(
+                qualification_record_staging_manifest_path=manifest_path,
+                candidate_table_staging_root=candidate_staging_root,
+                generated_at="2026-06-30T22:35:00+08:00",
+            )
+            rows_after = [
+                json.loads(line)
+                for line in table_file.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+
+        self.assertEqual(first_report["result"], "pass")
+        self.assertEqual(second_report["result"], "blocked")
+        self.assertFalse(second_report["candidate_table_update_performed"])
+        self.assertIn("candidate_table_merge_conflict", second_report["issues"])
+        self.assertEqual(rows_after[0]["qualification_rule_id"], "Q-CONFLICT")
 
     def test_build_default_add_on_price_limit_shortlist_malf_research_prep_materializes_canonical_shortlist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
