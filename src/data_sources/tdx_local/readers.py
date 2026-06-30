@@ -109,6 +109,8 @@ def read_daily_bars(
     if adjustment == "raw":
         path = _raw_day_path(root, ts_code)
         if not path.exists():
+            path = _vipdoc_day_path(root, ts_code)
+        if not path.exists():
             return []
         return _read_day_file(path, ts_code, limit, root)
     if adjustment not in TEXT_ADJUSTMENT_DIRS:
@@ -410,6 +412,12 @@ def _raw_day_path(root: Path, ts_code: str) -> Path:
     code, suffix = _split_ts_code(ts_code)
     market = SUFFIX_TO_MARKET[suffix]
     return root / "raw" / market / "lday" / f"{market}{code}.day"
+
+
+def _vipdoc_day_path(root: Path, ts_code: str) -> Path:
+    code, suffix = _split_ts_code(ts_code)
+    market = SUFFIX_TO_MARKET[suffix]
+    return root / "vipdoc" / market / "lday" / f"{market}{code}.day"
 
 
 def _lc5_bar_path(root: Path, ts_code: str) -> Path:

@@ -123,6 +123,18 @@ class TdxLocalReadersTest(unittest.TestCase):
         ])
         self.assertTrue(FORBIDDEN_FIELDS.isdisjoint(rows[0]))
 
+    def test_read_daily_bars_parses_vipdoc_day_file_when_root_is_tdx_install(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tdx_root = Path(tmp)
+            write_day_record(tdx_root / "vipdoc" / "sh" / "lday" / "sh600000.day", date=20260424)
+
+            rows = read_daily_bars(tdx_root, "600000.SH")
+
+        self.assertEqual(rows[0]["ts_code"], "600000.SH")
+        self.assertEqual(rows[0]["trade_date"], "2026-04-24")
+        self.assertEqual(rows[0]["source_ref"], "vipdoc/sh/lday/sh600000.day")
+        self.assertTrue(FORBIDDEN_FIELDS.isdisjoint(rows[0]))
+
     def test_read_daily_bars_parses_adjusted_text_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             offline_root = Path(tmp)
