@@ -1327,6 +1327,67 @@ def prepare_formal_qualification_record_write_audit(
     )
 
 
+def commit_formal_qualification_records_when_explicitly_requested(
+    write_audit_report: dict[str, Any],
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    generated_at_value = generated_at or datetime.now().astimezone().isoformat(timespec="seconds")
+    committed_records: list[dict[str, Any]] = []
+    held_items: list[dict[str, Any]] = []
+    issues: list[str] = []
+
+    audit_candidates = write_audit_report.get("formal_record_write_audit_candidates", [])
+    if not isinstance(audit_candidates, list) or not audit_candidates:
+        issues.append("formal_record_write_audit_candidates_missing")
+        audit_candidates = []
+
+    for audit_candidate in audit_candidates:
+        if not isinstance(audit_candidate, dict):
+            issues.append("invalid_formal_record_write_audit_candidate")
+            continue
+        if audit_candidate.get("formal_record_write_audit_status") != "pass":
+            held_items.append(
+                _held_formal_qualification_record_commit_item(
+                    audit_candidate,
+                    "formal_record_write_audit_not_pass",
+                )
+            )
+            continue
+        committed_records.append(_committed_formal_qualification_record(audit_candidate, generated_at_value))
+
+    next_action = (
+        "action:prepare_candidate_table_update_audit_when_explicitly_requested"
+        if committed_records
+        else "action:hold_for_formal_qualification_record_write_audit_passes"
+    )
+    if issues and not committed_records and not held_items:
+        next_action = "action:repair_formal_qualification_record_commit_input"
+
+    return _strip_forbidden_fields(
+        {
+            "result": "pass" if committed_records else "blocked",
+            "generated_at": generated_at_value,
+            "research_only": True,
+            "commit_id": "formal_qualification_record_commit_v0.1",
+            "source_audit_id": write_audit_report.get("audit_id"),
+            "qualification_record_commit_performed": bool(committed_records),
+            "committed_qualification_record_count": len(committed_records),
+            "held_qualification_record_commit_count": len(held_items),
+            "formal_front_filter_ready_count": 0,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "issues": issues,
+            "committed_qualification_records": committed_records,
+            "held_qualification_record_commit_items": held_items,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": next_action,
+        }
+    )
+
+
 def materialize_default_add_on_price_limit_core_malf_research_bundle(
     data_root: str | Path,
     tdx_root: str | Path,
@@ -2767,6 +2828,71 @@ def _held_formal_qualification_record_write_audit_result(
             "signal_generation_allowed": False,
             "backtest_execution_allowed": False,
             "next_action": "action:hold_for_formal_qualification_record_write_audit_candidate",
+        }
+    )
+
+
+def _committed_formal_qualification_record(
+    audit_candidate: dict[str, Any],
+    generated_at: str,
+) -> dict[str, Any]:
+    boundary_warning = list(audit_candidate.get("boundary_warning", []))
+    for item in [
+        "formal_record_commit_does_not_update_candidate_table",
+        "formal_record_commit_does_not_open_trading_layer",
+        "candidate_table_update_requires_separate_audit",
+        "trading_layer_read_requires_separate_gate",
+    ]:
+        if item not in boundary_warning:
+            boundary_warning.append(item)
+
+    return _strip_forbidden_fields(
+        {
+            "qualification_record_status": "formal_record_committed",
+            "qualification_record_id": audit_candidate.get("qualification_record_id"),
+            "ashare_sample_id": audit_candidate.get("ashare_sample_id"),
+            "ts_code": audit_candidate.get("ts_code"),
+            "symbol_name": audit_candidate.get("symbol_name"),
+            "sample_window_start": audit_candidate.get("sample_window_start"),
+            "sample_window_end": audit_candidate.get("sample_window_end"),
+            "qualification_rule_id": audit_candidate.get("qualification_rule_id"),
+            "rhythm_meaning": audit_candidate.get("rhythm_meaning"),
+            "tachibana_applicability": audit_candidate.get("tachibana_applicability"),
+            "source_manual_review_verdict": audit_candidate.get("manual_review_verdict"),
+            "source_formal_record_write_audit_status": audit_candidate.get("formal_record_write_audit_status"),
+            "source_formal_record_write_audit_reason": audit_candidate.get("formal_record_write_audit_reason"),
+            "committed_at": generated_at,
+            "boundary_warning": boundary_warning,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:prepare_candidate_table_update_audit_when_explicitly_requested",
+        }
+    )
+
+
+def _held_formal_qualification_record_commit_item(
+    audit_candidate: dict[str, Any],
+    reason: str,
+) -> dict[str, Any]:
+    return _strip_forbidden_fields(
+        {
+            "qualification_record_id": audit_candidate.get("qualification_record_id"),
+            "ts_code": audit_candidate.get("ts_code"),
+            "qualification_rule_id": audit_candidate.get("qualification_rule_id"),
+            "formal_record_write_audit_status": audit_candidate.get("formal_record_write_audit_status"),
+            "qualification_record_commit_status": "hold",
+            "qualification_record_commit_reason": reason,
+            "candidate_table_update_allowed": False,
+            "trading_layer_read_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:hold_for_formal_qualification_record_write_audit_pass",
         }
     )
 
