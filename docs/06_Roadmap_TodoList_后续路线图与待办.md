@@ -23,7 +23,8 @@
 - 系统已准备进入 read contract review。
 - 已实现 P7a 制度规则定义准备审计。
 - T+1、涨跌停、停复牌只作为规则草案输入通过准备度审计。
-- 完整 P7 尚未完成，后续仍需规则草案复核闸与制度规则定义 contract review。
+- 已实现 P7b 制度规则草案复核闸。
+- 完整 P7 尚未完成，后续仍需制度规则定义 contract review。
 - 真实生产路径 `Z:\asteria-trading-labs-data` 尚未执行人工确认写入。
 - 尚未开放真实 trading layer read。
 - 尚未开放正式制度规则定义、signal generation 或 backtest execution。
@@ -268,19 +269,29 @@ P7a 当前边界：
 
 ### P7b：制度规则草案复核闸
 
-待办：
+已完成：
 
-- [ ] 起草 P7b spec，明确读取 P7a readiness report 与三类 rule draft input。
-- [ ] 明确 P7b 审核规则草案质量、字段契约、证据引用与边界完整性。
-- [ ] 明确 P7b 仍不定义正式制度规则。
-- [ ] 明确 P7b 不生成 signal、不运行 backtest、不打开 trading layer read。
-- [ ] 编写 P7b implementation plan。
-- [ ] TDD 覆盖 pass / blocked / forbidden field / hard gates false。
-- [ ] 实现 P7b audit 并全量验证。
+- [x] 起草 P7b spec，明确读取 P7a readiness report 与三类 rule draft input。
+- [x] 明确 P7b 审核规则草案质量、字段契约、证据引用与边界完整性。
+- [x] 明确 P7b 仍不定义正式制度规则。
+- [x] 明确 P7b 不生成 signal、不运行 backtest、不打开 trading layer read。
+- [x] 编写 P7b implementation plan。
+- [x] TDD 覆盖 pass / blocked / forbidden field / hard gates false。
+- [x] 实现 P7b audit。
+- [x] focused 验证 `tests.test_tdx_local_first_batch` 通过。
+- [x] 跑全量验证。
 
-P7b 目标状态建议：
+规格与计划：
+
+[2026-07-01-p7b-institution-rule-draft-review-gate-design.md](./superpowers/specs/2026-07-01-p7b-institution-rule-draft-review-gate-design.md)
+
+[2026-07-01-p7b-institution-rule-draft-review-gate.md](./superpowers/plans/2026-07-01-p7b-institution-rule-draft-review-gate.md)
+
+P7b 当前目标状态：
 
 `ready_for_institution_rule_definition_contract_review`
+
+全量验证：`261 tests OK`
 
 ### P7c：制度规则定义 contract review
 
