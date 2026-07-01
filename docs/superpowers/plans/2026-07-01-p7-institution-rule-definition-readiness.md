@@ -1,8 +1,8 @@
-# P7 Institution Rule Definition Readiness Implementation Plan
+# P7a Institution Rule Definition Readiness Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development and superpowers:executing-plans. Do not write production code until the RED tests in Task 1 have been added and observed failing.
 
-**Goal:** Build the P7 read-only institution rule definition readiness audit. It checks whether T+1, price-limit, and suspension/resume materials are ready as rule draft inputs only, while keeping formal institution rule definition, trading layer read, signal generation, and backtest execution closed.
+**Goal:** Build the P7a read-only institution rule definition readiness audit. It checks whether T+1, price-limit, and suspension/resume materials are ready as rule draft inputs only, while keeping formal institution rule definition, trading layer read, signal generation, and backtest execution closed.
 
 **Spec:** `docs/superpowers/specs/2026-07-01-p7-institution-rule-definition-readiness-design.md`
 
@@ -16,7 +16,7 @@
 
 ---
 
-### Task 1: Add P7 RED Tests
+### Task 1: Add P7a RED Tests
 
 **Files:**
 
@@ -112,7 +112,7 @@ Expected: fail because the entry is not implemented or exported yet.
 
 ---
 
-### Task 2: Implement P7 Audit
+### Task 2: Implement P7a Audit
 
 **Files:**
 
@@ -226,7 +226,16 @@ git diff --check
 
 Update only after implementation and tests pass:
 
-- P7 readiness audit implemented.
-- P7 pass means `ready_for_institution_rule_definition_draft_review`.
+- P7a readiness audit implemented.
+- P7a pass means `ready_for_institution_rule_definition_draft_review`.
 - Formal institution rule definition remains closed.
 - Trading layer read, signal generation, and backtest execution remain closed.
+
+---
+
+### Follow-up: P7 Is Not Complete Yet
+
+P7a completes the readiness audit only. Complete P7 still requires:
+
+- P7b rule draft review gate.
+- P7c institution rule definition contract review.

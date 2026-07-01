@@ -1,18 +1,18 @@
-# P7 制度规则定义准备审计设计
+# P7a 制度规则定义准备审计设计
 
 **日期：** 2026-07-01
-**状态：** 已实现并通过全量测试，归档为 P7 设计依据
+**状态：** 已实现并通过全量测试，归档为 P7a 设计依据
 **范围：** P6 trading layer read gate contract 之后、正式制度规则定义之前的只读准备度审计
 
 ## 0. Spec Review 结论
 
-P7 本轮不定义正式 A 股制度规则。
+P7a 本轮不定义正式 A 股制度规则，也不代表完整 P7 已完成。
 
 本规格只建立一道准备度审计闸，回答一个窄问题：
 
 > 当前已有材料是否足够进入「制度规则草案复核」？
 
-P7 pass 只推进到：
+P7a pass 只推进到：
 
 `ready_for_institution_rule_definition_draft_review`
 
@@ -38,11 +38,11 @@ P6 已明确 consumer contract 可审哪些只读输入，但仍保持：
 - `signal_generation_allowed=False`
 - `backtest_execution_allowed=False`
 
-P7 从这个位置开始，只审查制度规则草案输入是否齐备。
+P7a 从这个位置开始，只审查制度规则草案输入是否齐备。
 
-## 2. P7 读取什么
+## 2. P7a 读取什么
 
-P7 第一版只读取调用方显式传入的内存 payload，不读真实市场根目录，不写文件。
+P7a 第一版只读取调用方显式传入的内存 payload，不读真实市场根目录，不写文件。
 
 必须输入：
 
@@ -68,9 +68,9 @@ P7 第一版只读取调用方显式传入的内存 payload，不读真实市场
 
 这些材料只能作为制度规则草案输入，不能携带交易动作、信号、仓位、回测结果或 MALF 覆盖字段。
 
-## 3. P7 审什么
+## 3. P7a 审什么
 
-P7 审计以下事项：
+P7a 审计以下事项：
 
 - P6 contract report 是否通过。
 - P6 与所有草案输入材料是否仍保持 hard gates 关闭。
@@ -80,7 +80,7 @@ P7 审计以下事项：
 - 输入与输出是否不含 forbidden fields。
 - 制度事实是否没有回流覆盖 MALF 层字段。
 
-## 4. P7 阻断什么
+## 4. P7a 阻断什么
 
 以下情况必须 blocked：
 
@@ -111,7 +111,7 @@ P7 审计以下事项：
   - `rhythm_meaning_override`
   - `tachibana_applicability_override`
 
-## 5. P7 输出什么
+## 5. P7a 输出什么
 
 Pass report：
 
@@ -145,7 +145,7 @@ Blocked report：
 原因：
 
 - P5/P6 已在这里形成 candidate table 之后、trading layer / institution rule 之前的审计闸链路。
-- P7 仍是只读 audit，不需要进入真实 trading layer，也不需要触碰 `ashare_intake_validator.py` 的 CLI 管线。
+- P7a 仍是只读 audit，不需要进入真实 trading layer，也不需要触碰 `ashare_intake_validator.py` 的 CLI 管线。
 - 测试可继续放在 `tests/test_tdx_local_first_batch.py`。
 
 新增入口：
@@ -171,7 +171,7 @@ Blocked report：
 
 ## 8. 非目标
 
-P7 本轮不做：
+P7a 本轮不做：
 
 - 不生成正式制度规则文件。
 - 不把 `t1`、`price_limit`、`suspension_resume` 转成交易动作。
@@ -180,3 +180,12 @@ P7 本轮不做：
 - 不运行 backtest。
 - 不写真实数据根。
 - 不修改真实市场文件。
+
+## 9. 后续 P7 工作
+
+完整 P7 尚未完成。P7a 完成后，后续至少还需要：
+
+- P7b：制度规则草案复核闸，审查三类 draft input 的质量、字段契约、证据引用与边界完整性。
+- P7c：制度规则定义 contract review，定义未来正式 institution rule definition 入口可读取什么、审什么、阻断什么、输出什么。
+
+P7b/P7c 仍不得自动打开 `institution_rule_definition_allowed`，更不得打开 trading layer read、signal generation 或 backtest execution。

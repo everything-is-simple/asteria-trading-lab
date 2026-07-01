@@ -21,8 +21,9 @@
 - formal candidate table 已准备进入未来 trading layer read gate contract review。
 - 已实现 P6 trading layer read gate / consumer contract audit。
 - 系统已准备进入 read contract review。
-- 已实现 P7 制度规则定义准备审计。
+- 已实现 P7a 制度规则定义准备审计。
 - T+1、涨跌停、停复牌只作为规则草案输入通过准备度审计。
+- 完整 P7 尚未完成，后续仍需规则草案复核闸与制度规则定义 contract review。
 - 真实生产路径 `Z:\asteria-trading-labs-data` 尚未执行人工确认写入。
 - 尚未开放真实 trading layer read。
 - 尚未开放正式制度规则定义、signal generation 或 backtest execution。
@@ -235,15 +236,17 @@ P4b 已完成设计：
 - Method/PM 与 execution constraint/verdict 之间的只读消费关系已明确。
 - 制度事实仍不被误当成交易规则。
 
+### P7a：制度规则定义准备审计
+
 已完成：
 
-- [x] 起草 P7 制度规则定义准备 spec。
+- [x] 起草 P7a 制度规则定义准备审计 spec。
 - [x] 明确涨跌停、停复牌、T+1 只作为规则草案输入。
-- [x] 明确 P7 不生成 signal、不运行 backtest。
-- [x] 编写 P7 implementation plan。
+- [x] 明确 P7a 不生成 signal、不运行 backtest。
+- [x] 编写 P7a implementation plan。
 - [x] 按 TDD 编写 pass / blocked / forbidden field / hard gates false 测试。
 - [x] 实现 `audit_institution_rule_definition_readiness_when_explicitly_requested`。
-- [x] 从 `data_sources.tdx_local` 导出 P7 audit 入口。
+- [x] 从 `data_sources.tdx_local` 导出 P7a audit 入口。
 - [x] focused 验证 `tests.test_tdx_local_first_batch` 通过。
 - [x] 跑全量验证。
 
@@ -253,9 +256,9 @@ P4b 已完成设计：
 
 [2026-07-01-p7-institution-rule-definition-readiness.md](./superpowers/plans/2026-07-01-p7-institution-rule-definition-readiness.md)
 
-当前边界：
+P7a 当前边界：
 
-- P7 pass 只表示 `ready_for_institution_rule_definition_draft_review`。
+- P7a pass 只表示 `ready_for_institution_rule_definition_draft_review`。
 - T+1、涨跌停、停复牌仍只是 `draft_input_only=True` 的草案输入。
 - `institution_rule_definition_allowed=False`
 - `trading_layer_read_allowed=False`
@@ -263,11 +266,44 @@ P4b 已完成设计：
 - `backtest_execution_allowed=False`
 - 全量验证：`256 tests OK`
 
+### P7b：制度规则草案复核闸
+
+待办：
+
+- [ ] 起草 P7b spec，明确读取 P7a readiness report 与三类 rule draft input。
+- [ ] 明确 P7b 审核规则草案质量、字段契约、证据引用与边界完整性。
+- [ ] 明确 P7b 仍不定义正式制度规则。
+- [ ] 明确 P7b 不生成 signal、不运行 backtest、不打开 trading layer read。
+- [ ] 编写 P7b implementation plan。
+- [ ] TDD 覆盖 pass / blocked / forbidden field / hard gates false。
+- [ ] 实现 P7b audit 并全量验证。
+
+P7b 目标状态建议：
+
+`ready_for_institution_rule_definition_contract_review`
+
+### P7c：制度规则定义 contract review
+
+待办：
+
+- [ ] 起草 P7c spec，明确未来正式制度规则定义入口可读取什么、审什么、阻断什么、输出什么。
+- [ ] 明确 P7c 仍是 contract review，不直接生成 signal/backtest。
+- [ ] 编写 P7c implementation plan。
+- [ ] TDD 覆盖 pass / blocked / forbidden field / hard gates false。
+- [ ] 实现 P7c audit 并全量验证。
+
+P7 完整完成条件：
+
+- P7a readiness audit 已完成。
+- P7b draft review gate 已完成。
+- P7c institution rule definition contract review 已完成。
+- `institution_rule_definition_allowed` 是否开放仍需单独显式 gate，不由 P7a/P7b/P7c 自动打开。
+
 ## 10. P8：信号与回测
 
 启动条件：
 
-- 制度规则定义准备审计完成，后续仍需独立规则草案复核与正式定义 gate。
+- 完整 P7 制度规则定义准备完成，且后续仍需独立正式定义开放 gate。
 - trading layer read 通过独立审计。
 - signal generation gate 经过显式开放审计。
 
