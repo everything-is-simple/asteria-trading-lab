@@ -23,6 +23,7 @@ from data_sources.tdx_local import (
     audit_formal_front_filter_review_package,
     audit_add_on_price_limit_shortlist_time_alignment,
     audit_first_batch_sample_coverage,
+    audit_institution_rule_definition_contract_review_when_explicitly_requested,
     audit_institution_rule_definition_draft_review_gate_when_explicitly_requested,
     audit_institution_rule_definition_readiness_when_explicitly_requested,
     audit_trading_layer_read_gate_contract_when_explicitly_requested,
@@ -235,6 +236,44 @@ class TdxLocalFirstBatchTest(unittest.TestCase):
             "t1_rule_draft_input": reviewed_draft_input("t1"),
             "price_limit_rule_draft_input": reviewed_draft_input("price_limit"),
             "suspension_resume_rule_draft_input": reviewed_draft_input("suspension_resume"),
+        }
+
+    def _p7c_contract_review_inputs(self, root: Path) -> dict[str, dict]:
+        p7b_report = audit_institution_rule_definition_draft_review_gate_when_explicitly_requested(
+            **self._p7b_draft_review_inputs(root),
+            generated_at="2026-07-01T13:00:00+08:00",
+        )
+        self.assertEqual(p7b_report["result"], "pass")
+
+        def contract_ready_draft_input(input_type: str) -> dict[str, object]:
+            return {
+                "result": "pass",
+                "artifact_id": f"{input_type}_rule_draft_input_v0.1",
+                "rule_draft_input_type": input_type,
+                "draft_input_only": True,
+                "draft_quality_status": "ready_for_review",
+                "field_contract_status": "complete",
+                "evidence_refs": [f"unit-test:{input_type}:evidence"],
+                "boundary_review_status": "clean",
+                "contract_review_status": "ready",
+                "definition_contract_fields": [
+                    "rule_draft_input_type",
+                    "evidence_refs",
+                    "boundary_review_status",
+                ],
+                "consumer_entrypoint": "institution_rule_definition",
+                "research_only": True,
+                "institution_rule_definition_allowed": False,
+                "trading_layer_read_allowed": False,
+                "signal_generation_allowed": False,
+                "backtest_execution_allowed": False,
+            }
+
+        return {
+            "p7b_draft_review_gate_report": p7b_report,
+            "t1_rule_draft_input": contract_ready_draft_input("t1"),
+            "price_limit_rule_draft_input": contract_ready_draft_input("price_limit"),
+            "suspension_resume_rule_draft_input": contract_ready_draft_input("suspension_resume"),
         }
 
     def test_default_add_on_price_limit_shortlist_sample_entries_keeps_core_four_and_backup_two_split(self) -> None:
@@ -2929,6 +2968,165 @@ class TdxLocalFirstBatchTest(unittest.TestCase):
             report = audit_institution_rule_definition_draft_review_gate_when_explicitly_requested(
                 **inputs,
                 generated_at="2026-07-01T12:50:00+08:00",
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertFalse(report["institution_rule_definition_allowed"])
+        self.assertFalse(report["trading_layer_read_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+
+    def test_audit_institution_rule_definition_contract_review_when_explicitly_requested_passes_contract_ready_drafts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = self._p7c_contract_review_inputs(Path(tmp))
+
+            report = audit_institution_rule_definition_contract_review_when_explicitly_requested(
+                **inputs,
+                generated_at="2026-07-01T13:10:00+08:00",
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["audit_id"], "institution_rule_definition_contract_review_audit_v0.1")
+        self.assertEqual(report["institution_rule_definition_contract_review_result"], "pass")
+        self.assertEqual(
+            report["institution_rule_definition_contract_review_status"],
+            "ready_for_explicit_institution_rule_definition_open_gate_review",
+        )
+        self.assertEqual(
+            report["contract_reviewed_rule_draft_inputs"],
+            ["t1", "price_limit", "suspension_resume"],
+        )
+        self.assertFalse(report["institution_rule_definition_allowed"])
+        self.assertFalse(report["trading_layer_read_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+        self.assertEqual(report["next_action"], "action:review_explicit_institution_rule_definition_open_gate")
+        payload = json.dumps(report, ensure_ascii=False)
+        self.assertFalse(any(field in payload for field in P7_FORBIDDEN_FIELDS))
+
+    def test_audit_institution_rule_definition_contract_review_when_explicitly_requested_blocks_missing_or_failed_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = self._p7c_contract_review_inputs(Path(tmp))
+            cases = [
+                (
+                    "p7b_draft_review_gate_report",
+                    None,
+                    "institution_rule_definition_contract_review_requires_p7b_draft_review_gate_pass",
+                ),
+                (
+                    "p7b_draft_review_gate_report",
+                    {"institution_rule_definition_draft_review_gate_result": "blocked"},
+                    "institution_rule_definition_contract_review_requires_p7b_draft_review_gate_pass",
+                ),
+                (
+                    "t1_rule_draft_input",
+                    None,
+                    "institution_rule_definition_contract_review_requires_t1_contract_ready_draft",
+                ),
+                (
+                    "price_limit_rule_draft_input",
+                    None,
+                    "institution_rule_definition_contract_review_requires_price_limit_contract_ready_draft",
+                ),
+                (
+                    "suspension_resume_rule_draft_input",
+                    None,
+                    "institution_rule_definition_contract_review_requires_suspension_resume_contract_ready_draft",
+                ),
+                (
+                    "t1_rule_draft_input",
+                    {**inputs["t1_rule_draft_input"], "draft_input_only": False},
+                    "institution_rule_definition_contract_review_requires_draft_input_only",
+                ),
+            ]
+            reports = []
+            for field, replacement, _issue in cases:
+                payload = dict(inputs)
+                payload[field] = replacement
+                reports.append(
+                    audit_institution_rule_definition_contract_review_when_explicitly_requested(
+                        **payload,
+                        generated_at="2026-07-01T13:20:00+08:00",
+                    )
+                )
+
+        for report, (_field, _replacement, issue) in zip(reports, cases):
+            self.assertEqual(report["result"], "blocked")
+            self.assertIn(issue, report["issues"])
+            self.assertFalse(report["institution_rule_definition_allowed"])
+            self.assertFalse(report["trading_layer_read_allowed"])
+            self.assertFalse(report["signal_generation_allowed"])
+            self.assertFalse(report["backtest_execution_allowed"])
+
+    def test_audit_institution_rule_definition_contract_review_when_explicitly_requested_blocks_incomplete_contract_quality(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = self._p7c_contract_review_inputs(Path(tmp))
+            cases = [
+                (
+                    {"contract_review_status": "needs_rework"},
+                    "institution_rule_definition_contract_review_requires_ready_contract_review",
+                ),
+                (
+                    {"definition_contract_fields": []},
+                    "institution_rule_definition_contract_review_requires_definition_contract_fields",
+                ),
+                (
+                    {"consumer_entrypoint": "trading_layer"},
+                    "institution_rule_definition_contract_review_requires_definition_consumer_entrypoint",
+                ),
+                (
+                    {"field_contract_status": "incomplete"},
+                    "institution_rule_definition_contract_review_requires_complete_field_contract",
+                ),
+            ]
+            reports = []
+            for updates, _issue in cases:
+                payload = dict(inputs)
+                payload["price_limit_rule_draft_input"] = dict(payload["price_limit_rule_draft_input"])
+                payload["price_limit_rule_draft_input"].update(updates)
+                reports.append(
+                    audit_institution_rule_definition_contract_review_when_explicitly_requested(
+                        **payload,
+                        generated_at="2026-07-01T13:30:00+08:00",
+                    )
+                )
+
+        for report, (_updates, issue) in zip(reports, cases):
+            self.assertEqual(report["result"], "blocked")
+            self.assertIn(issue, report["issues"])
+            self.assertFalse(report["institution_rule_definition_allowed"])
+            self.assertFalse(report["trading_layer_read_allowed"])
+            self.assertFalse(report["signal_generation_allowed"])
+            self.assertFalse(report["backtest_execution_allowed"])
+
+    def test_audit_institution_rule_definition_contract_review_when_explicitly_requested_blocks_forbidden_field_without_echo(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = self._p7c_contract_review_inputs(Path(tmp))
+            inputs["t1_rule_draft_input"] = dict(inputs["t1_rule_draft_input"])
+            inputs["t1_rule_draft_input"]["target_position"] = 0.2
+
+            report = audit_institution_rule_definition_contract_review_when_explicitly_requested(
+                **inputs,
+                generated_at="2026-07-01T13:40:00+08:00",
+            )
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertIn("institution_rule_definition_contract_review_forbidden_output_field_present", report["issues"])
+        payload = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn("target_position", payload)
+        self.assertFalse(any(field in payload for field in P7_FORBIDDEN_FIELDS))
+        self.assertFalse(report["institution_rule_definition_allowed"])
+        self.assertFalse(report["trading_layer_read_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+
+    def test_audit_institution_rule_definition_contract_review_when_explicitly_requested_keeps_hard_gates_false(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = self._p7c_contract_review_inputs(Path(tmp))
+
+            report = audit_institution_rule_definition_contract_review_when_explicitly_requested(
+                **inputs,
+                generated_at="2026-07-01T13:50:00+08:00",
             )
 
         self.assertEqual(report["result"], "pass")

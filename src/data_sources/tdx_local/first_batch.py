@@ -2069,6 +2069,73 @@ def audit_institution_rule_definition_draft_review_gate_when_explicitly_requeste
     )
 
 
+def audit_institution_rule_definition_contract_review_when_explicitly_requested(
+    p7b_draft_review_gate_report: dict[str, Any] | None,
+    t1_rule_draft_input: dict[str, Any] | None,
+    price_limit_rule_draft_input: dict[str, Any] | None,
+    suspension_resume_rule_draft_input: dict[str, Any] | None,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    generated_at_value = generated_at or datetime.now().astimezone().isoformat(timespec="seconds")
+    issues: list[str] = []
+
+    inputs = [
+        p7b_draft_review_gate_report,
+        t1_rule_draft_input,
+        price_limit_rule_draft_input,
+        suspension_resume_rule_draft_input,
+    ]
+    if any(isinstance(item, dict) and _first_forbidden_output_field_present(item) is not None for item in inputs):
+        issues.append("institution_rule_definition_contract_review_forbidden_output_field_present")
+
+    _validate_p7b_draft_review_for_institution_rule_definition_contract_review(
+        p7b_draft_review_gate_report,
+        issues,
+    )
+    _validate_contract_ready_draft_for_institution_rule_definition_contract_review(
+        t1_rule_draft_input,
+        "t1",
+        "institution_rule_definition_contract_review_requires_t1_contract_ready_draft",
+        issues,
+    )
+    _validate_contract_ready_draft_for_institution_rule_definition_contract_review(
+        price_limit_rule_draft_input,
+        "price_limit",
+        "institution_rule_definition_contract_review_requires_price_limit_contract_ready_draft",
+        issues,
+    )
+    _validate_contract_ready_draft_for_institution_rule_definition_contract_review(
+        suspension_resume_rule_draft_input,
+        "suspension_resume",
+        "institution_rule_definition_contract_review_requires_suspension_resume_contract_ready_draft",
+        issues,
+    )
+
+    if issues:
+        return _institution_rule_definition_contract_review_blocked_report(generated_at_value, issues)
+
+    return _strip_forbidden_fields(
+        {
+            "result": "pass",
+            "generated_at": generated_at_value,
+            "research_only": True,
+            "audit_id": "institution_rule_definition_contract_review_audit_v0.1",
+            "institution_rule_definition_contract_review_result": "pass",
+            "institution_rule_definition_contract_review_status": (
+                "ready_for_explicit_institution_rule_definition_open_gate_review"
+            ),
+            "p7b_draft_review_gate_result": "pass",
+            "contract_reviewed_rule_draft_inputs": ["t1", "price_limit", "suspension_resume"],
+            "contract_review_only": True,
+            "institution_rule_definition_allowed": False,
+            "trading_layer_read_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:review_explicit_institution_rule_definition_open_gate",
+        }
+    )
+
+
 def materialize_default_add_on_price_limit_core_malf_research_bundle(
     data_root: str | Path,
     tdx_root: str | Path,
@@ -4170,6 +4237,95 @@ def _institution_rule_definition_draft_review_gate_blocked_report(
             "next_action": "action:repair_institution_rule_definition_draft_review_inputs",
         }
     )
+
+
+def _institution_rule_definition_contract_review_blocked_report(
+    generated_at: str,
+    issues: list[str],
+) -> dict[str, Any]:
+    if not issues:
+        issues = ["institution_rule_definition_contract_review_blocked"]
+    return _strip_forbidden_fields(
+        {
+            "result": "blocked",
+            "generated_at": generated_at,
+            "research_only": True,
+            "audit_id": "institution_rule_definition_contract_review_audit_v0.1",
+            "institution_rule_definition_contract_review_result": "blocked",
+            "institution_rule_definition_contract_review_status": (
+                "blocked_before_explicit_institution_rule_definition_open_gate_review"
+            ),
+            "issues": sorted(set(issues)),
+            "contract_reviewed_rule_draft_inputs": ["t1", "price_limit", "suspension_resume"],
+            "institution_rule_definition_allowed": False,
+            "trading_layer_read_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:repair_institution_rule_definition_contract_review_inputs",
+        }
+    )
+
+
+def _validate_p7b_draft_review_for_institution_rule_definition_contract_review(
+    report: dict[str, Any] | None,
+    issues: list[str],
+) -> None:
+    if not isinstance(report, dict):
+        issues.append("institution_rule_definition_contract_review_requires_p7b_draft_review_gate_pass")
+        return
+    if report.get("audit_id") != "institution_rule_definition_draft_review_gate_audit_v0.1":
+        issues.append("institution_rule_definition_contract_review_requires_p7b_draft_review_gate_pass")
+    if report.get("institution_rule_definition_draft_review_gate_result") != "pass":
+        issues.append("institution_rule_definition_contract_review_requires_p7b_draft_review_gate_pass")
+    if report.get("institution_rule_definition_draft_review_status") != "ready_for_institution_rule_definition_contract_review":
+        issues.append("institution_rule_definition_contract_review_requires_p7b_draft_review_gate_pass")
+    _append_institution_rule_definition_contract_review_downstream_issue(report, issues)
+
+
+def _validate_contract_ready_draft_for_institution_rule_definition_contract_review(
+    draft_input: dict[str, Any] | None,
+    expected_input_type: str,
+    missing_issue: str,
+    issues: list[str],
+) -> None:
+    if not isinstance(draft_input, dict):
+        issues.append(missing_issue)
+        return
+    if draft_input.get("rule_draft_input_type") != expected_input_type:
+        issues.append(missing_issue)
+    if draft_input.get("draft_input_only") is not True:
+        issues.append("institution_rule_definition_contract_review_requires_draft_input_only")
+    if draft_input.get("draft_quality_status") != "ready_for_review":
+        issues.append("institution_rule_definition_contract_review_requires_ready_quality")
+    if draft_input.get("field_contract_status") != "complete":
+        issues.append("institution_rule_definition_contract_review_requires_complete_field_contract")
+    evidence_refs = draft_input.get("evidence_refs")
+    if not isinstance(evidence_refs, list) or not evidence_refs:
+        issues.append("institution_rule_definition_contract_review_requires_evidence_refs")
+    if draft_input.get("boundary_review_status") != "clean":
+        issues.append("institution_rule_definition_contract_review_requires_clean_boundary")
+    if draft_input.get("contract_review_status") != "ready":
+        issues.append("institution_rule_definition_contract_review_requires_ready_contract_review")
+    definition_contract_fields = draft_input.get("definition_contract_fields")
+    if not isinstance(definition_contract_fields, list) or not definition_contract_fields:
+        issues.append("institution_rule_definition_contract_review_requires_definition_contract_fields")
+    if draft_input.get("consumer_entrypoint") != "institution_rule_definition":
+        issues.append("institution_rule_definition_contract_review_requires_definition_consumer_entrypoint")
+    _append_institution_rule_definition_contract_review_downstream_issue(draft_input, issues)
+
+
+def _append_institution_rule_definition_contract_review_downstream_issue(
+    payload: dict[str, Any],
+    issues: list[str],
+) -> None:
+    for field in [
+        "institution_rule_definition_allowed",
+        "trading_layer_read_allowed",
+        "signal_generation_allowed",
+        "backtest_execution_allowed",
+    ]:
+        if payload.get(field) not in {None, False}:
+            issues.append("institution_rule_definition_contract_review_downstream_gate_open")
 
 
 def _validate_p7a_readiness_for_institution_rule_definition_draft_review(

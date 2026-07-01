@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-07-01
-**当前基线**: `ready_for_institution_rule_definition_draft_review`
+**当前基线**: `ready_for_explicit_institution_rule_definition_open_gate_review`
 **文档性质**: 未来待办、路线图与优先级安排
 
 ## 1. 当前基线
@@ -24,7 +24,8 @@
 - 已实现 P7a 制度规则定义准备审计。
 - T+1、涨跌停、停复牌只作为规则草案输入通过准备度审计。
 - 已实现 P7b 制度规则草案复核闸。
-- 完整 P7 尚未完成，后续仍需制度规则定义 contract review。
+- 已实现 P7c 制度规则定义 contract review。
+- 完整 P7 准备里程碑已完成，后续仍需显式制度规则定义开放 gate review。
 - 真实生产路径 `Z:\asteria-trading-labs-data` 尚未执行人工确认写入。
 - 尚未开放真实 trading layer read。
 - 尚未开放正式制度规则定义、signal generation 或 backtest execution。
@@ -295,13 +296,25 @@ P7b 当前目标状态：
 
 ### P7c：制度规则定义 contract review
 
-待办：
+已完成：
 
-- [ ] 起草 P7c spec，明确未来正式制度规则定义入口可读取什么、审什么、阻断什么、输出什么。
-- [ ] 明确 P7c 仍是 contract review，不直接生成 signal/backtest。
-- [ ] 编写 P7c implementation plan。
-- [ ] TDD 覆盖 pass / blocked / forbidden field / hard gates false。
-- [ ] 实现 P7c audit 并全量验证。
+- [x] 起草 P7c spec，明确未来正式制度规则定义入口可读取什么、审什么、阻断什么、输出什么。
+- [x] 明确 P7c 仍是 contract review，不直接生成 signal/backtest。
+- [x] 编写 P7c implementation plan。
+- [x] TDD 覆盖 pass / blocked / forbidden field / hard gates false。
+- [x] 实现 P7c audit 并全量验证。
+
+规格与计划：
+
+[2026-07-01-p7c-institution-rule-definition-contract-review-design.md](./superpowers/specs/2026-07-01-p7c-institution-rule-definition-contract-review-design.md)
+
+[2026-07-01-p7c-institution-rule-definition-contract-review.md](./superpowers/plans/2026-07-01-p7c-institution-rule-definition-contract-review.md)
+
+P7c 当前目标状态：
+
+`ready_for_explicit_institution_rule_definition_open_gate_review`
+
+全量验证：`266 tests OK`
 
 P7 完整完成条件：
 
