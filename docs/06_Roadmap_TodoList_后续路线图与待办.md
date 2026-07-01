@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-07-01
-**当前基线**: `institution_rule_definition_opened_for_rule_definition_only`
+**当前基线**: `formal_institution_rule_definition_audited_for_rule_definition_only`
 **文档性质**: 未来待办、路线图与优先级安排
 
 ## 1. 当前基线
@@ -27,6 +27,8 @@
 - 已实现 P7c 制度规则定义 contract review。
 - 已实现 P7d 显式制度规则定义开放 gate。
 - 制度规则定义入口已开放为 rule-definition-only。
+- 已实现 P7e 正式制度规则定义审计。
+- formal institution rule definition input 已可在 rule-definition-only 范围内完成审计。
 - 真实生产路径 `Z:\asteria-trading-labs-data` 尚未执行人工确认写入。
 - 尚未开放真实 trading layer read。
 - 制度规则定义入口只开放到 rule-definition-only；正式规则文件尚未生成，signal generation 与 backtest execution 仍未开放。
@@ -347,11 +349,57 @@ P7d 当前目标状态：
 
 全量验证：`271 tests OK`
 
-## 10. P8：信号与回测
+### P7e：正式制度规则定义审计
+
+已完成：
+
+- [x] 起草 P7e spec，明确读取 P7d report、三类 contract-ready reviewed draft 与 formal institution rule definition input。
+- [x] 明确 P7e 只审正式制度规则定义本身，不打开 trading layer、signal、backtest。
+- [x] 编写 P7e implementation plan。
+- [x] TDD 覆盖 pass / blocked / forbidden field / hard gates false。
+- [x] 实现 P7e audit 并全量验证。
+
+规格与计划：
+
+[2026-07-01-p7e-formal-institution-rule-definition-audit-design.md](./superpowers/specs/2026-07-01-p7e-formal-institution-rule-definition-audit-design.md)
+
+[2026-07-01-p7e-formal-institution-rule-definition-audit.md](./superpowers/plans/2026-07-01-p7e-formal-institution-rule-definition-audit.md)
+
+P7e 当前目标状态：
+
+`formal_institution_rule_definition_audited_for_rule_definition_only`
+
+全量验证：`275 tests OK`
+
+P7 完整完成条件：
+
+- P7a readiness audit 已完成。
+- P7b draft review gate 已完成。
+- P7c institution rule definition contract review 已完成。
+- P7d explicit institution rule definition open gate 已完成。
+- P7e formal institution rule definition audit 已完成。
+- `institution_rule_definition_allowed=True` 只允许 rule-definition-only，不开放 trading layer、signal 或 backtest。
+
+## 10. P8：正式制度规则定义持久化/封装准备
 
 启动条件：
 
-- 制度规则定义入口已开放为 rule-definition-only，但正式规则文件仍未生成。
+- P7e formal institution rule definition audit 已通过。
+- formal institution rule definition input 的字段契约、边界与证据已经齐备。
+- 仍不开放 trading layer read、signal generation、backtest execution。
+
+待办：
+
+- [ ] formal institution rule definition persistence/package 规格。
+- [ ] formal institution rule definition persistence/package implementation plan。
+- [ ] TDD 覆盖 pass / blocked / forbidden field / hard gate。
+- [ ] 明确是否只生成 persistence package，还是进入受控写入前审计。
+
+## 11. P9：信号与回测
+
+启动条件：
+
+- 正式制度规则定义文件或其持久化包已通过独立 gate。
 - trading layer read 通过独立审计。
 - signal generation gate 经过显式开放审计。
 
@@ -362,7 +410,7 @@ P7d 当前目标状态：
 - [ ] Pioneer v0.2 回测。
 - [ ] 15 笔交易段重跑与对照。
 
-## 11. 暂不做事项
+## 12. 暂不做事项
 
 - [ ] 不启用 `--fast-research`。
 - [ ] 不合并审计步骤。
@@ -372,7 +420,7 @@ P7d 当前目标状态：
 - [ ] 不提前实现 signal generation。
 - [ ] 不提前执行 backtest。
 
-## 12. 进度估算口径
+## 13. 进度估算口径
 
 Mistral Large 的估算可以作为路线图参考，但采用以下校准口径：
 

@@ -2208,6 +2208,80 @@ def audit_explicit_institution_rule_definition_open_gate_when_explicitly_request
     )
 
 
+def audit_formal_institution_rule_definition_when_explicitly_requested(
+    p7d_open_gate_report: dict[str, Any] | None,
+    t1_rule_draft_input: dict[str, Any] | None,
+    price_limit_rule_draft_input: dict[str, Any] | None,
+    suspension_resume_rule_draft_input: dict[str, Any] | None,
+    formal_institution_rule_definition_input: dict[str, Any] | None,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    generated_at_value = generated_at or datetime.now().astimezone().isoformat(timespec="seconds")
+    issues: list[str] = []
+
+    inputs = [
+        p7d_open_gate_report,
+        t1_rule_draft_input,
+        price_limit_rule_draft_input,
+        suspension_resume_rule_draft_input,
+        formal_institution_rule_definition_input,
+    ]
+    if any(isinstance(item, dict) and _first_forbidden_output_field_present(item) is not None for item in inputs):
+        issues.append("formal_institution_rule_definition_forbidden_output_field_present")
+
+    _validate_p7d_open_gate_for_formal_institution_rule_definition(p7d_open_gate_report, issues)
+    _validate_contract_ready_draft_for_formal_institution_rule_definition(
+        t1_rule_draft_input,
+        "t1",
+        "formal_institution_rule_definition_requires_t1_contract_ready_draft",
+        issues,
+    )
+    _validate_contract_ready_draft_for_formal_institution_rule_definition(
+        price_limit_rule_draft_input,
+        "price_limit",
+        "formal_institution_rule_definition_requires_price_limit_contract_ready_draft",
+        issues,
+    )
+    _validate_contract_ready_draft_for_formal_institution_rule_definition(
+        suspension_resume_rule_draft_input,
+        "suspension_resume",
+        "formal_institution_rule_definition_requires_suspension_resume_contract_ready_draft",
+        issues,
+    )
+    _validate_formal_institution_rule_definition_input(
+        formal_institution_rule_definition_input,
+        issues,
+    )
+
+    if issues:
+        return _formal_institution_rule_definition_blocked_report(generated_at_value, issues)
+
+    return _strip_forbidden_fields(
+        {
+            "result": "pass",
+            "generated_at": generated_at_value,
+            "research_only": True,
+            "audit_id": "formal_institution_rule_definition_audit_v0.1",
+            "formal_institution_rule_definition_result": "pass",
+            "formal_institution_rule_definition_status": (
+                "formal_institution_rule_definition_audited_for_rule_definition_only"
+            ),
+            "p7d_open_gate_result": "pass",
+            "consumed_reviewed_draft_inputs": ["t1", "price_limit", "suspension_resume"],
+            "formal_institution_rule_definition_field_contract_status": "complete",
+            "formal_institution_rule_definition_boundary_status": "clean",
+            "formal_institution_rule_definition_evidence_status": "ready",
+            "institution_rule_definition_allowed": True,
+            "trading_layer_read_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": (
+                "action:prepare_formal_institution_rule_definition_persistence_package_when_explicitly_requested"
+            ),
+        }
+    )
+
+
 def materialize_default_add_on_price_limit_core_malf_research_bundle(
     data_root: str | Path,
     tdx_root: str | Path,
@@ -4365,6 +4439,33 @@ def _explicit_institution_rule_definition_open_gate_blocked_report(
     )
 
 
+def _formal_institution_rule_definition_blocked_report(
+    generated_at: str,
+    issues: list[str],
+) -> dict[str, Any]:
+    if not issues:
+        issues = ["formal_institution_rule_definition_blocked"]
+    return _strip_forbidden_fields(
+        {
+            "result": "blocked",
+            "generated_at": generated_at,
+            "research_only": True,
+            "audit_id": "formal_institution_rule_definition_audit_v0.1",
+            "formal_institution_rule_definition_result": "blocked",
+            "formal_institution_rule_definition_status": (
+                "blocked_before_formal_institution_rule_definition_audit_pass"
+            ),
+            "issues": sorted(set(issues)),
+            "consumed_reviewed_draft_inputs": ["t1", "price_limit", "suspension_resume"],
+            "institution_rule_definition_allowed": False,
+            "trading_layer_read_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:repair_formal_institution_rule_definition_inputs",
+        }
+    )
+
+
 def _validate_p7c_contract_review_for_explicit_institution_rule_definition_open_gate(
     report: dict[str, Any] | None,
     issues: list[str],
@@ -4443,6 +4544,94 @@ def _append_explicit_institution_rule_definition_open_gate_downstream_issue(
     ]:
         if payload.get(field) not in {None, False}:
             issues.append("explicit_institution_rule_definition_open_gate_downstream_gate_open")
+
+
+def _validate_p7d_open_gate_for_formal_institution_rule_definition(
+    report: dict[str, Any] | None,
+    issues: list[str],
+) -> None:
+    if not isinstance(report, dict):
+        issues.append("formal_institution_rule_definition_requires_p7d_open_gate_pass")
+        return
+    if report.get("audit_id") != "explicit_institution_rule_definition_open_gate_audit_v0.1":
+        issues.append("formal_institution_rule_definition_requires_p7d_open_gate_pass")
+    if report.get("explicit_institution_rule_definition_open_gate_result") != "pass":
+        issues.append("formal_institution_rule_definition_requires_p7d_open_gate_pass")
+    if (
+        report.get("explicit_institution_rule_definition_open_gate_status")
+        != "institution_rule_definition_opened_for_rule_definition_only"
+    ):
+        issues.append("formal_institution_rule_definition_requires_p7d_open_gate_pass")
+    if report.get("institution_rule_definition_allowed") is not True:
+        issues.append("formal_institution_rule_definition_requires_p7d_open_gate_pass")
+    _append_formal_institution_rule_definition_downstream_issue(report, issues)
+
+
+def _validate_contract_ready_draft_for_formal_institution_rule_definition(
+    draft_input: dict[str, Any] | None,
+    expected_input_type: str,
+    missing_issue: str,
+    issues: list[str],
+) -> None:
+    if not isinstance(draft_input, dict):
+        issues.append(missing_issue)
+        return
+    if draft_input.get("rule_draft_input_type") != expected_input_type:
+        issues.append(missing_issue)
+    if draft_input.get("draft_input_only") is not True:
+        issues.append("formal_institution_rule_definition_requires_draft_input_only")
+    if draft_input.get("contract_review_status") != "ready":
+        issues.append("formal_institution_rule_definition_requires_ready_contract_review")
+    definition_contract_fields = draft_input.get("definition_contract_fields")
+    if not isinstance(definition_contract_fields, list) or not definition_contract_fields:
+        issues.append("formal_institution_rule_definition_requires_definition_contract_fields")
+    if draft_input.get("consumer_entrypoint") != "institution_rule_definition":
+        issues.append("formal_institution_rule_definition_requires_definition_consumer_entrypoint")
+    _append_formal_institution_rule_definition_downstream_issue(draft_input, issues)
+
+
+def _validate_formal_institution_rule_definition_input(
+    definition_input: dict[str, Any] | None,
+    issues: list[str],
+) -> None:
+    if not isinstance(definition_input, dict):
+        issues.append("formal_institution_rule_definition_requires_definition_input")
+        return
+    if definition_input.get("artifact_id") != "formal_institution_rule_definition_input_v0.1":
+        issues.append("formal_institution_rule_definition_requires_definition_input")
+    if definition_input.get("definition_scope") != "institution_rule_definition_only":
+        issues.append("formal_institution_rule_definition_requires_rule_definition_only_scope")
+    if definition_input.get("definition_input_status") != "ready_for_audit":
+        issues.append("formal_institution_rule_definition_requires_ready_definition_input")
+    consumed_reviewed_draft_inputs = definition_input.get("consumed_reviewed_draft_inputs")
+    if consumed_reviewed_draft_inputs != ["t1", "price_limit", "suspension_resume"]:
+        issues.append("formal_institution_rule_definition_requires_full_reviewed_draft_coverage")
+    if definition_input.get("field_contract_status") != "complete":
+        issues.append("formal_institution_rule_definition_requires_complete_field_contract")
+    if definition_input.get("boundary_review_status") != "clean":
+        issues.append("formal_institution_rule_definition_requires_clean_boundary")
+    evidence_refs = definition_input.get("evidence_refs")
+    if not isinstance(evidence_refs, list) or not evidence_refs:
+        issues.append("formal_institution_rule_definition_requires_evidence_refs")
+    formal_definition_fields = definition_input.get("formal_definition_fields")
+    if not isinstance(formal_definition_fields, list) or not formal_definition_fields:
+        issues.append("formal_institution_rule_definition_requires_formal_definition_fields")
+    if definition_input.get("institution_rule_definition_allowed") is not True:
+        issues.append("formal_institution_rule_definition_requires_rule_definition_only_gate_open")
+    _append_formal_institution_rule_definition_downstream_issue(definition_input, issues)
+
+
+def _append_formal_institution_rule_definition_downstream_issue(
+    payload: dict[str, Any],
+    issues: list[str],
+) -> None:
+    for field in [
+        "trading_layer_read_allowed",
+        "signal_generation_allowed",
+        "backtest_execution_allowed",
+    ]:
+        if payload.get(field) not in {None, False}:
+            issues.append("formal_institution_rule_definition_downstream_gate_open")
 
 
 def _validate_p7b_draft_review_for_institution_rule_definition_contract_review(
