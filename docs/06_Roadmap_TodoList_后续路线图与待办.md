@@ -1,8 +1,8 @@
 # 06_Roadmap_TodoList — 后续路线图与待办
 
-**版本**: v0.9
+**版本**: v1.0
 **日期**: 2026-07-01
-**当前基线**: `candidate_table_trading_layer_readiness_audit_passed`
+**当前基线**: `ready_for_trading_layer_read_contract_review`
 **文档性质**: 未来待办、路线图与优先级安排
 
 ## 1. 当前基线
@@ -19,6 +19,8 @@
 - 已实现 P4c formal data root candidate table 写入入口，并在临时 formal data root 验证 backup 与 rollback。
 - 已实现 P5 formal candidate table trading layer readiness audit。
 - formal candidate table 已准备进入未来 trading layer read gate contract review。
+- 已实现 P6 trading layer read gate / consumer contract audit。
+- 系统已准备进入 read contract review。
 - 真实生产路径 `Z:\asteria-trading-labs-data` 尚未执行人工确认写入。
 - 尚未开放真实 trading layer read。
 - 尚未开放 signal generation 或 backtest execution。
@@ -210,9 +212,10 @@ P4b 已完成设计：
 - [x] 明确 P6 第一版仍保持 `trading_layer_read_allowed=false`，只推进到下一 review gate。
 - [x] 保持 signal generation 与 backtest execution 关闭。
 - [x] 编写 P6 implementation plan。
-- [ ] 按 TDD 编写 P6 pass / blocked / forbidden field / hard gate 测试。
-- [ ] 实现 P6 read gate contract audit。
-- [ ] 跑 focused 与全量验证。
+- [x] 按 TDD 编写 P6 pass / blocked / forbidden field / hard gate 测试。
+- [x] 实现 P6 read gate contract audit。
+- [x] 跑 focused 验证。
+- [x] 跑全量验证。
 
 已定版规格：
 

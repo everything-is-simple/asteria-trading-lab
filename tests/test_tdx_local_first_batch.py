@@ -23,6 +23,7 @@ from data_sources.tdx_local import (
     audit_formal_front_filter_review_package,
     audit_add_on_price_limit_shortlist_time_alignment,
     audit_first_batch_sample_coverage,
+    audit_trading_layer_read_gate_contract_when_explicitly_requested,
     audit_trading_layer_readiness_for_candidate_table_when_explicitly_requested,
     build_first_batch_sample_package,
     build_default_add_on_price_limit_shortlist_malf_research_prep,
@@ -124,6 +125,43 @@ class TdxLocalFirstBatchTest(unittest.TestCase):
         )
         self.assertEqual(report["result"], "pass")
         return formal_data_root / "ashare" / "candidate-table-v0.1" / "manifest.json"
+
+    def _p6_contract_inputs(self, root: Path) -> dict[str, dict]:
+        manifest_path = self._write_single_formal_candidate_table(root)
+        p5_report = audit_trading_layer_readiness_for_candidate_table_when_explicitly_requested(
+            formal_candidate_table_manifest_path=manifest_path,
+            generated_at="2026-07-01T10:00:00+08:00",
+        )
+        self.assertEqual(p5_report["result"], "pass")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        return {
+            "p5_readiness_report": p5_report,
+            "formal_candidate_table_manifest": manifest,
+            "method_pm_gate": {
+                "result": "pass",
+                "gate_id": "method_pm_bridge_gate_v0.1",
+                "method_pm_readiness": "pass",
+                "signal_generation_allowed": False,
+                "backtest_execution_allowed": False,
+            },
+            "backtest_input_gate": {
+                "result": "pass",
+                "gate_id": "backtest_input_gate_v0.1",
+                "backtest_input_readiness": "pass",
+                "signal_generation_allowed": False,
+                "backtest_execution_allowed": False,
+            },
+            "execution_constraint_artifact": {
+                "result": "pass",
+                "artifact_id": "execution_constraint_snapshot_v0.1",
+                "audit_only": True,
+                "execution_constraint_audit_only": True,
+                "institution_rule_definition_allowed": False,
+                "trading_layer_read_allowed": False,
+                "signal_generation_allowed": False,
+                "backtest_execution_allowed": False,
+            },
+        }
 
     def test_default_add_on_price_limit_shortlist_sample_entries_keeps_core_four_and_backup_two_split(self) -> None:
         entries = default_add_on_price_limit_shortlist_sample_entries()
@@ -2412,6 +2450,134 @@ class TdxLocalFirstBatchTest(unittest.TestCase):
             report = audit_trading_layer_readiness_for_candidate_table_when_explicitly_requested(
                 formal_candidate_table_manifest_path=manifest_path,
                 generated_at="2026-07-01T09:40:00+08:00",
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertFalse(report["institution_rule_definition_allowed"])
+        self.assertFalse(report["trading_layer_read_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+
+    def test_audit_trading_layer_read_gate_contract_when_explicitly_requested_passes_contract_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = self._p6_contract_inputs(Path(tmp))
+
+            report = audit_trading_layer_read_gate_contract_when_explicitly_requested(
+                **inputs,
+                generated_at="2026-07-01T10:10:00+08:00",
+            )
+
+        self.assertEqual(report["result"], "pass")
+        self.assertEqual(report["audit_id"], "trading_layer_read_gate_contract_audit_v0.1")
+        self.assertEqual(report["trading_layer_read_gate_contract_audit_result"], "pass")
+        self.assertEqual(
+            report["trading_layer_read_gate_contract_status"],
+            "ready_for_trading_layer_read_contract_review",
+        )
+        self.assertEqual(report["candidate_table_trading_layer_readiness_audit_result"], "pass")
+        self.assertEqual(report["method_pm_gate_result"], "pass")
+        self.assertEqual(report["backtest_input_gate_result"], "pass")
+        self.assertTrue(report["execution_constraint_audit_only"])
+        self.assertFalse(report["institution_rule_definition_allowed"])
+        self.assertFalse(report["trading_layer_read_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+        self.assertEqual(report["next_action"], "action:review_trading_layer_read_gate_contract")
+        payload = json.dumps(report, ensure_ascii=False)
+        self.assertFalse(any(field in payload for field in FORBIDDEN_FIELDS))
+
+    def test_audit_trading_layer_read_gate_contract_when_explicitly_requested_blocks_missing_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = self._p6_contract_inputs(Path(tmp))
+            cases = [
+                ("p5_readiness_report", "trading_layer_read_gate_requires_p5_readiness_pass"),
+                ("method_pm_gate", "trading_layer_read_gate_requires_method_pm_gate_pass"),
+                ("backtest_input_gate", "trading_layer_read_gate_requires_backtest_input_gate_pass"),
+                ("execution_constraint_artifact", "trading_layer_read_gate_requires_execution_constraint_audit_only"),
+            ]
+            reports = []
+            for field, _issue in cases:
+                payload = dict(inputs)
+                payload[field] = None
+                reports.append(
+                    audit_trading_layer_read_gate_contract_when_explicitly_requested(
+                        **payload,
+                        generated_at="2026-07-01T10:20:00+08:00",
+                    )
+                )
+
+        for report, (_field, issue) in zip(reports, cases):
+            self.assertEqual(report["result"], "blocked")
+            self.assertIn(issue, report["issues"])
+            self.assertFalse(report["institution_rule_definition_allowed"])
+            self.assertFalse(report["trading_layer_read_allowed"])
+            self.assertFalse(report["signal_generation_allowed"])
+            self.assertFalse(report["backtest_execution_allowed"])
+
+    def test_audit_trading_layer_read_gate_contract_when_explicitly_requested_blocks_failed_gates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = self._p6_contract_inputs(Path(tmp))
+            cases = [
+                (
+                    "p5_readiness_report",
+                    {"candidate_table_trading_layer_readiness_audit_result": "blocked"},
+                    "trading_layer_read_gate_requires_p5_readiness_pass",
+                ),
+                ("method_pm_gate", {"result": "blocked"}, "trading_layer_read_gate_requires_method_pm_gate_pass"),
+                ("backtest_input_gate", {"result": "blocked"}, "trading_layer_read_gate_requires_backtest_input_gate_pass"),
+                (
+                    "execution_constraint_artifact",
+                    {"audit_only": False},
+                    "trading_layer_read_gate_requires_execution_constraint_audit_only",
+                ),
+            ]
+            reports = []
+            for field, updates, _issue in cases:
+                payload = dict(inputs)
+                payload[field] = dict(payload[field])
+                payload[field].update(updates)
+                reports.append(
+                    audit_trading_layer_read_gate_contract_when_explicitly_requested(
+                        **payload,
+                        generated_at="2026-07-01T10:25:00+08:00",
+                    )
+                )
+
+        for report, (_field, _updates, issue) in zip(reports, cases):
+            self.assertEqual(report["result"], "blocked")
+            self.assertIn(issue, report["issues"])
+            self.assertFalse(report["trading_layer_read_allowed"])
+            self.assertFalse(report["signal_generation_allowed"])
+            self.assertFalse(report["backtest_execution_allowed"])
+
+    def test_audit_trading_layer_read_gate_contract_when_explicitly_requested_blocks_forbidden_field_without_echo(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = self._p6_contract_inputs(Path(tmp))
+            inputs["method_pm_gate"] = dict(inputs["method_pm_gate"])
+            inputs["method_pm_gate"]["buy_signal"] = True
+
+            report = audit_trading_layer_read_gate_contract_when_explicitly_requested(
+                **inputs,
+                generated_at="2026-07-01T10:30:00+08:00",
+            )
+
+        self.assertEqual(report["result"], "blocked")
+        self.assertIn("trading_layer_read_gate_forbidden_output_field_present", report["issues"])
+        payload = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn("buy_signal", payload)
+        self.assertFalse(any(field in payload for field in FORBIDDEN_FIELDS))
+        self.assertFalse(report["institution_rule_definition_allowed"])
+        self.assertFalse(report["trading_layer_read_allowed"])
+        self.assertFalse(report["signal_generation_allowed"])
+        self.assertFalse(report["backtest_execution_allowed"])
+
+    def test_audit_trading_layer_read_gate_contract_when_explicitly_requested_never_opens_trading_layer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = self._p6_contract_inputs(Path(tmp))
+
+            report = audit_trading_layer_read_gate_contract_when_explicitly_requested(
+                **inputs,
+                generated_at="2026-07-01T10:40:00+08:00",
             )
 
         self.assertEqual(report["result"], "pass")

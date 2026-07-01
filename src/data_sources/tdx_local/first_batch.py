@@ -1887,6 +1887,57 @@ def audit_trading_layer_readiness_for_candidate_table_when_explicitly_requested(
     )
 
 
+def audit_trading_layer_read_gate_contract_when_explicitly_requested(
+    p5_readiness_report: dict[str, Any] | None,
+    formal_candidate_table_manifest: dict[str, Any] | None,
+    method_pm_gate: dict[str, Any] | None,
+    backtest_input_gate: dict[str, Any] | None,
+    execution_constraint_artifact: dict[str, Any] | None,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    generated_at_value = generated_at or datetime.now().astimezone().isoformat(timespec="seconds")
+    issues: list[str] = []
+
+    inputs = [
+        p5_readiness_report,
+        formal_candidate_table_manifest,
+        method_pm_gate,
+        backtest_input_gate,
+        execution_constraint_artifact,
+    ]
+    if any(isinstance(item, dict) and _first_forbidden_output_field_present(item) is not None for item in inputs):
+        issues.append("trading_layer_read_gate_forbidden_output_field_present")
+
+    _validate_p5_readiness_for_trading_layer_read_gate(p5_readiness_report, issues)
+    _validate_formal_candidate_table_for_trading_layer_read_gate(formal_candidate_table_manifest, issues)
+    _validate_method_pm_gate_for_trading_layer_read_gate(method_pm_gate, issues)
+    _validate_backtest_input_gate_for_trading_layer_read_gate(backtest_input_gate, issues)
+    _validate_execution_constraint_for_trading_layer_read_gate(execution_constraint_artifact, issues)
+
+    if issues:
+        return _trading_layer_read_gate_contract_blocked_report(generated_at_value, issues)
+
+    return _strip_forbidden_fields(
+        {
+            "result": "pass",
+            "generated_at": generated_at_value,
+            "research_only": True,
+            "audit_id": "trading_layer_read_gate_contract_audit_v0.1",
+            "trading_layer_read_gate_contract_audit_result": "pass",
+            "trading_layer_read_gate_contract_status": "ready_for_trading_layer_read_contract_review",
+            "candidate_table_trading_layer_readiness_audit_result": "pass",
+            "method_pm_gate_result": "pass",
+            "backtest_input_gate_result": "pass",
+            "execution_constraint_audit_only": True,
+            "institution_rule_definition_allowed": False,
+            "trading_layer_read_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:review_trading_layer_read_gate_contract",
+        }
+    )
+
+
 def materialize_default_add_on_price_limit_core_malf_research_bundle(
     data_root: str | Path,
     tdx_root: str | Path,
@@ -3914,6 +3965,126 @@ def _candidate_table_trading_readiness_blocked_report(
             "next_action": "action:repair_formal_candidate_table_before_trading_layer_readiness_audit",
         }
     )
+
+
+def _trading_layer_read_gate_contract_blocked_report(
+    generated_at: str,
+    issues: list[str],
+) -> dict[str, Any]:
+    if not issues:
+        issues = ["trading_layer_read_gate_contract_blocked"]
+    return _strip_forbidden_fields(
+        {
+            "result": "blocked",
+            "generated_at": generated_at,
+            "research_only": True,
+            "audit_id": "trading_layer_read_gate_contract_audit_v0.1",
+            "trading_layer_read_gate_contract_audit_result": "blocked",
+            "trading_layer_read_gate_contract_status": "blocked_before_trading_layer_read_contract_review",
+            "issues": sorted(set(issues)),
+            "institution_rule_definition_allowed": False,
+            "trading_layer_read_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:repair_trading_layer_read_gate_contract_inputs",
+        }
+    )
+
+
+def _validate_p5_readiness_for_trading_layer_read_gate(
+    report: dict[str, Any] | None,
+    issues: list[str],
+) -> None:
+    if not isinstance(report, dict):
+        issues.append("trading_layer_read_gate_requires_p5_readiness_pass")
+        return
+    if report.get("audit_id") != "candidate_table_trading_layer_readiness_audit_v0.1":
+        issues.append("trading_layer_read_gate_requires_p5_readiness_pass")
+    if report.get("candidate_table_trading_layer_readiness_audit_result") != "pass":
+        issues.append("trading_layer_read_gate_requires_p5_readiness_pass")
+    if report.get("candidate_table_trading_layer_readiness_status") != "ready_for_trading_layer_read_gate_review":
+        issues.append("trading_layer_read_gate_requires_p5_readiness_pass")
+    _append_trading_layer_read_gate_downstream_issue(report, issues)
+
+
+def _validate_formal_candidate_table_for_trading_layer_read_gate(
+    manifest: dict[str, Any] | None,
+    issues: list[str],
+) -> None:
+    if not isinstance(manifest, dict):
+        issues.append("trading_layer_read_gate_requires_formal_candidate_table")
+        return
+    if manifest.get("manifest_id") != "candidate_table_formal_manifest_v0.1":
+        issues.append("trading_layer_read_gate_requires_formal_candidate_table")
+    if manifest.get("candidate_table_update_target") != "formal_data_root":
+        issues.append("trading_layer_read_gate_requires_formal_candidate_table")
+    if manifest.get("trading_layer_read_allowed") is not False:
+        issues.append("trading_layer_read_gate_requires_formal_candidate_table")
+    _append_trading_layer_read_gate_downstream_issue(manifest, issues)
+
+
+def _validate_method_pm_gate_for_trading_layer_read_gate(
+    gate: dict[str, Any] | None,
+    issues: list[str],
+) -> None:
+    if not isinstance(gate, dict):
+        issues.append("trading_layer_read_gate_requires_method_pm_gate_pass")
+        return
+    if not _read_gate_passes(gate, "method_pm_readiness"):
+        issues.append("trading_layer_read_gate_requires_method_pm_gate_pass")
+    _append_trading_layer_read_gate_downstream_issue(gate, issues)
+
+
+def _validate_backtest_input_gate_for_trading_layer_read_gate(
+    gate: dict[str, Any] | None,
+    issues: list[str],
+) -> None:
+    if not isinstance(gate, dict):
+        issues.append("trading_layer_read_gate_requires_backtest_input_gate_pass")
+        return
+    if not _read_gate_passes(gate, "backtest_input_readiness"):
+        issues.append("trading_layer_read_gate_requires_backtest_input_gate_pass")
+    _append_trading_layer_read_gate_downstream_issue(gate, issues)
+
+
+def _validate_execution_constraint_for_trading_layer_read_gate(
+    artifact: dict[str, Any] | None,
+    issues: list[str],
+) -> None:
+    if not isinstance(artifact, dict):
+        issues.append("trading_layer_read_gate_requires_execution_constraint_audit_only")
+        return
+    if not _audit_only_artifact_passes(artifact):
+        issues.append("trading_layer_read_gate_requires_execution_constraint_audit_only")
+    if artifact.get("institution_rule_definition_allowed") is not False:
+        issues.append("trading_layer_read_gate_requires_execution_constraint_audit_only")
+    _append_trading_layer_read_gate_downstream_issue(artifact, issues)
+
+
+def _read_gate_passes(gate: dict[str, Any], readiness_field: str) -> bool:
+    if "result" in gate:
+        return gate.get("result") == "pass"
+    return gate.get(readiness_field) == "pass"
+
+
+def _audit_only_artifact_passes(artifact: dict[str, Any]) -> bool:
+    if "audit_only" in artifact:
+        return artifact.get("audit_only") is True
+    return artifact.get("execution_constraint_audit_only") is True
+
+
+def _append_trading_layer_read_gate_downstream_issue(
+    payload: dict[str, Any],
+    issues: list[str],
+) -> None:
+    for field in [
+        "institution_rule_definition_allowed",
+        "trading_layer_read_allowed",
+        "signal_generation_allowed",
+        "backtest_execution_allowed",
+    ]:
+        if payload.get(field) not in {None, False}:
+            issues.append("trading_layer_read_gate_downstream_gate_open")
 
 
 def _validate_candidate_table_formal_manifest_for_trading_readiness(

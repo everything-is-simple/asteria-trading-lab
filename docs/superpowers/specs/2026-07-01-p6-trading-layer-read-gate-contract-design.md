@@ -1,12 +1,12 @@
 # P6 Trading Layer Read Gate Contract 设计
 
 **日期：** 2026-07-01
-**状态：** 已评审定版，可写 implementation plan；尚未实现
+**状态：** 已实现并通过全量测试，归档为 P6 设计依据
 **范围：** P5 formal candidate table readiness audit 之后、真实 trading layer read 开放之前的只读 consumer contract 设计
 
 ## 0. Spec Review 结论
 
-本规格已完成 P6 前置评审，结论为：可以进入 implementation plan 编写阶段。
+本规格已完成 P6 前置评审、实施计划、代码实现、导出与全量测试。
 
 评审确认：
 
@@ -17,15 +17,22 @@
 - 已明确 P6 第一版仍保持 `trading_layer_read_allowed=False`。
 - 已明确 P6 不进入 P7 制度规则定义，也不进入 P8 signal / backtest。
 
-评审后的下一步：
+已实现入口：
 
-`docs/superpowers/plans/2026-07-01-p6-trading-layer-read-gate-contract.md`
+`audit_trading_layer_read_gate_contract_when_explicitly_requested`
+
+当前归档结论：
+
+- P6 pass 只表示 `ready_for_trading_layer_read_contract_review`。
+- `trading_layer_read_allowed` 仍保持 `False`。
+- `institution_rule_definition_allowed`、`signal_generation_allowed`、`backtest_execution_allowed` 仍保持 `False`。
+- 后续进入 P7 前，仍不得生成 signal、仓位、订单或 backtest result。
 
 ## 1. 当前系统位置
 
 当前系统位置是：
 
-`candidate_table_trading_layer_readiness_audit_passed`
+`ready_for_trading_layer_read_contract_review`
 
 P5 已经证明 formal candidate table 的 `manifest.json` 与 `candidate-table.jsonl` 在结构上可进入未来 trading layer read gate review。
 
