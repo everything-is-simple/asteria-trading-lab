@@ -1,8 +1,8 @@
 # 06_Roadmap_TodoList — 后续路线图与待办
 
-**版本**: v0.7
-**日期**: 2026-06-30
-**当前基线**: `formal_candidate_table_update_performed`
+**版本**: v0.8
+**日期**: 2026-07-01
+**当前基线**: `candidate_table_trading_layer_readiness_audit_passed`
 **文档性质**: 未来待办、路线图与优先级安排
 
 ## 1. 当前基线
@@ -17,8 +17,10 @@
 - 已生成 staging qualification record manifest 与 records。
 - 已生成 staging candidate table draft JSONL 与 manifest。
 - 已实现 P4c formal data root candidate table 写入入口，并在临时 formal data root 验证 backup 与 rollback。
+- 已实现 P5 formal candidate table trading layer readiness audit。
+- formal candidate table 已准备进入未来 trading layer read gate contract review。
 - 真实生产路径 `Z:\asteria-trading-labs-data` 尚未执行人工确认写入。
-- 尚未开放 trading layer。
+- 尚未开放真实 trading layer read。
 - 尚未开放 signal generation 或 backtest execution。
 
 事实进度记录见：
@@ -159,7 +161,7 @@ P4b 已完成设计：
 - 边界：P4b staging 实现已完成，尚未真实更新正式 `data_root` candidate table。
 - 验证：`tests.test_tdx_local_first_batch` 覆盖 pass / blocked manifest / forbidden field / duplicate key / idempotent rewrite。
 
-## 7. P5：制度规则定义
+## 7. P5：trading layer readiness audit
 
 启动条件：
 
@@ -167,17 +169,69 @@ P4b 已完成设计：
 - P4 持久化与候选表写入路径已稳定。
 - P4c formal candidate table writer 已完成；trading layer 仍需独立审计后才能读取。
 
+已完成：
+
+- [x] 设计 `audit_trading_layer_readiness_for_candidate_table_when_explicitly_requested`。
+- [x] 审计 formal candidate table manifest 与 JSONL 内容。
+- [x] 验证 missing manifest / missing JSONL / malformed JSONL / forbidden fields / downstream gates。
+- [x] 确认 institution rule definition readiness 仍未开放时，继续 block trading layer read。
+- [x] 明确 P5 pass 只表示 `ready_for_trading_layer_read_gate_review`。
+- [x] 明确 P5 不生成 signal、不生成仓位、不运行 backtest、不定义正式制度规则。
+
+规格与计划：
+
+[2026-07-01-p5-trading-layer-readiness-audit-design.md](./superpowers/specs/2026-07-01-p5-trading-layer-readiness-audit-design.md)
+
+[2026-07-01-p5-trading-layer-readiness-audit.md](./superpowers/plans/2026-07-01-p5-trading-layer-readiness-audit.md)
+
+当前边界：
+
+- `institution_rule_definition_allowed=False`
+- `trading_layer_read_allowed=False`
+- `signal_generation_allowed=False`
+- `backtest_execution_allowed=False`
+
+## 8. P6：trading layer read gate / consumer contract
+
+启动条件：
+
+- P5 trading layer readiness audit 已通过。
+- formal candidate table manifest / JSONL 已证明结构可读。
+- Method/PM、Backtest Input、execution constraint / verdict 的只读消费边界需要先设计清楚。
+
 待办：
 
-- [ ] 设计 `audit_trading_layer_readiness_for_candidate_table_when_explicitly_requested`。
-- [ ] 审计 formal candidate table manifest 与 JSONL 内容。
-- [ ] 确认 institution rule definition readiness 仍未开放时，继续 block trading layer read。
+- [ ] 设计 P6 read gate contract 规格。
+- [ ] 明确 trading layer read gate 可以读取哪些 artifact。
+- [ ] 明确缺 Method/PM plan 时如何 blocked。
+- [ ] 明确缺 Backtest Input gate 时如何 blocked。
+- [ ] 明确 execution constraint snapshot 与 execution feasibility verdict 如何作为只读输入。
+- [ ] 明确 candidate table readiness audit 如何作为前置证明。
+- [ ] 明确 P6 第一版是否仍保持 `trading_layer_read_allowed=false`，只推进到下一 review gate。
+- [ ] 保持 signal generation 与 backtest execution 关闭。
+
+建议规格：
+
+[2026-07-01-p6-trading-layer-read-gate-contract-design.md](./superpowers/specs/2026-07-01-p6-trading-layer-read-gate-contract-design.md)
+
+## 9. P7：制度规则定义
+
+启动条件：
+
+- P6 read gate contract 已完成规格设计。
+- Method/PM 与 execution constraint/verdict 之间的只读消费关系已明确。
+- 制度事实仍不被误当成交易规则。
+
+待办：
+
 - [ ] 起草涨跌停规则草案。
 - [ ] 起草停复牌规则草案。
 - [ ] 起草 T+1 相关约束草案。
 - [ ] 明确规则层与 MALF 层的边界。
+- [ ] 新增 pass / blocked / 禁用字段校验测试。
+- [ ] 继续保持 signal 与 backtest 关闭。
 
-## 8. P6：信号与回测
+## 10. P8：信号与回测
 
 启动条件：
 
@@ -192,16 +246,17 @@ P4b 已完成设计：
 - [ ] Pioneer v0.2 回测。
 - [ ] 15 笔交易段重跑与对照。
 
-## 9. 暂不做事项
+## 11. 暂不做事项
 
 - [ ] 不启用 `--fast-research`。
 - [ ] 不合并审计步骤。
 - [ ] 不跳过 candidate table update audit。
 - [ ] 不提前开放 trading layer read。
+- [ ] 不把 P5 pass 解释成真实 trading layer read 已发生。
 - [ ] 不提前实现 signal generation。
 - [ ] 不提前执行 backtest。
 
-## 10. 进度估算口径
+## 12. 进度估算口径
 
 Mistral Large 的估算可以作为路线图参考，但采用以下校准口径：
 
