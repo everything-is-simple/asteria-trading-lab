@@ -36,6 +36,13 @@ python -m unittest tests.test_ashare_intake_validator -v
 - 除受控导出命令外，模块应保持只读，不得偷偷写回数据。
 - 不得把交易信号、仓位字段混入 MALF 或制度审计层。
 
+## 可审计决策链
+
+- 新 gate、新阶段、路线选择、制度审计或数据写入边界决策时，使用 `asteria-decision-gate`，先记录 `DecisionTrace`：当前证据、候选路线、剪枝理由、保留路线、硬边界与验证方式。
+- 开工、收工、日报、阶段总结、当前进度和下一步判断时，使用 `asteria-daily-status-review`，必须从最近会话、记忆摘要、git、`docs/04_施工计划_当前进度版.md`、`docs/06_Roadmap_TodoList_后续路线图与待办.md` 和 `docs/daily-status/` 取证。
+- 创建或修订 PRD、TRD、Design、README、AGENTS、CLAUDE、施工计划、路线图和 handoff 文档时，使用 `asteria-doc-reality-audit`，区分 `implemented`、`verified`、`design-only`、`research-only`、`not-started`、`blocked`。
+- 重大路线选择的 DecisionTrace 存放到 `docs/decision-traces/`；不要用 hook 或 automation 代替决策记录。
+
 ## 测试规范
 
 - 测试框架：标准库 `unittest`。
