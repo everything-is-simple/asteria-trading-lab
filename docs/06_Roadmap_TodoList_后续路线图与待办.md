@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-07-01
-**当前基线**: `ready_for_explicit_institution_rule_definition_open_gate_review`
+**当前基线**: `institution_rule_definition_opened_for_rule_definition_only`
 **文档性质**: 未来待办、路线图与优先级安排
 
 ## 1. 当前基线
@@ -25,7 +25,8 @@
 - T+1、涨跌停、停复牌只作为规则草案输入通过准备度审计。
 - 已实现 P7b 制度规则草案复核闸。
 - 已实现 P7c 制度规则定义 contract review。
-- 完整 P7 准备里程碑已完成，后续仍需显式制度规则定义开放 gate review。
+- 已实现 P7d 显式制度规则定义开放 gate。
+- 制度规则定义入口已开放为 rule-definition-only。
 - 真实生产路径 `Z:\asteria-trading-labs-data` 尚未执行人工确认写入。
 - 尚未开放真实 trading layer read。
 - 尚未开放正式制度规则定义、signal generation 或 backtest execution。
@@ -321,13 +322,36 @@ P7 完整完成条件：
 - P7a readiness audit 已完成。
 - P7b draft review gate 已完成。
 - P7c institution rule definition contract review 已完成。
-- `institution_rule_definition_allowed` 是否开放仍需单独显式 gate，不由 P7a/P7b/P7c 自动打开。
+- P7d explicit institution rule definition open gate 已完成。
+- `institution_rule_definition_allowed=True` 只允许 rule-definition-only，不开放 trading layer、signal 或 backtest。
+
+### P7d：显式制度规则定义开放 gate
+
+已完成：
+
+- [x] 起草 P7d spec，明确读取 P7c report、三类 contract-ready draft 与显式 open-gate 决策。
+- [x] 明确 P7d 只开放 `institution_rule_definition_allowed`，不打开 trading layer、signal、backtest。
+- [x] 编写 P7d implementation plan。
+- [x] TDD 覆盖 pass / blocked / bad decision / forbidden field / opens only rule definition gate。
+- [x] 实现 P7d audit 并全量验证。
+
+规格与计划：
+
+[2026-07-01-p7d-explicit-institution-rule-definition-open-gate-design.md](./superpowers/specs/2026-07-01-p7d-explicit-institution-rule-definition-open-gate-design.md)
+
+[2026-07-01-p7d-explicit-institution-rule-definition-open-gate.md](./superpowers/plans/2026-07-01-p7d-explicit-institution-rule-definition-open-gate.md)
+
+P7d 当前目标状态：
+
+`institution_rule_definition_opened_for_rule_definition_only`
+
+全量验证：`271 tests OK`
 
 ## 10. P8：信号与回测
 
 启动条件：
 
-- 完整 P7 制度规则定义准备完成，且后续仍需独立正式定义开放 gate。
+- 制度规则定义入口已开放为 rule-definition-only，但正式规则文件仍未生成。
 - trading layer read 通过独立审计。
 - signal generation gate 经过显式开放审计。
 
