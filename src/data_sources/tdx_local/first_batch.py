@@ -2282,6 +2282,62 @@ def audit_formal_institution_rule_definition_when_explicitly_requested(
     )
 
 
+def prepare_formal_institution_rule_definition_persistence_package_when_explicitly_requested(
+    p7e_formal_rule_definition_report: dict[str, Any] | None,
+    formal_institution_rule_definition_payload: dict[str, Any] | None,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    generated_at_value = generated_at or datetime.now().astimezone().isoformat(timespec="seconds")
+    issues: list[str] = []
+
+    inputs = [
+        p7e_formal_rule_definition_report,
+        formal_institution_rule_definition_payload,
+    ]
+    if any(isinstance(item, dict) and _first_forbidden_output_field_present(item) is not None for item in inputs):
+        issues.append("formal_institution_rule_definition_persistence_package_forbidden_output_field_present")
+
+    _validate_p7e_report_for_formal_institution_rule_definition_persistence_package(
+        p7e_formal_rule_definition_report,
+        issues,
+    )
+    _validate_formal_institution_rule_definition_payload_for_persistence_package(
+        formal_institution_rule_definition_payload,
+        issues,
+    )
+
+    if issues:
+        return _formal_institution_rule_definition_persistence_package_blocked_report(
+            generated_at_value,
+            issues,
+        )
+
+    return _strip_forbidden_fields(
+        {
+            "result": "pass",
+            "generated_at": generated_at_value,
+            "research_only": True,
+            "audit_id": "formal_institution_rule_definition_persistence_package_v0.1",
+            "formal_institution_rule_definition_persistence_package_result": "pass",
+            "formal_institution_rule_definition_persistence_package_status": (
+                "formal_institution_rule_definition_persistence_package_prepared"
+            ),
+            "formal_institution_rule_definition_persistence_package_prepared": True,
+            "formal_institution_rule_definition_persistence_performed": False,
+            "source_formal_institution_rule_definition_result": "pass",
+            "packaged_rule_definition_inputs": ["t1", "price_limit", "suspension_resume"],
+            "package_field_contract_status": "complete",
+            "package_boundary_status": "clean",
+            "package_evidence_status": "ready",
+            "institution_rule_definition_allowed": True,
+            "trading_layer_read_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:audit_formal_institution_rule_definition_write_when_explicitly_requested",
+        }
+    )
+
+
 def materialize_default_add_on_price_limit_core_malf_research_bundle(
     data_root: str | Path,
     tdx_root: str | Path,
@@ -4466,6 +4522,35 @@ def _formal_institution_rule_definition_blocked_report(
     )
 
 
+def _formal_institution_rule_definition_persistence_package_blocked_report(
+    generated_at: str,
+    issues: list[str],
+) -> dict[str, Any]:
+    if not issues:
+        issues = ["formal_institution_rule_definition_persistence_package_blocked"]
+    return _strip_forbidden_fields(
+        {
+            "result": "blocked",
+            "generated_at": generated_at,
+            "research_only": True,
+            "audit_id": "formal_institution_rule_definition_persistence_package_v0.1",
+            "formal_institution_rule_definition_persistence_package_result": "blocked",
+            "formal_institution_rule_definition_persistence_package_status": (
+                "blocked_before_formal_institution_rule_definition_persistence_package_prepared"
+            ),
+            "formal_institution_rule_definition_persistence_package_prepared": False,
+            "formal_institution_rule_definition_persistence_performed": False,
+            "issues": sorted(set(issues)),
+            "packaged_rule_definition_inputs": ["t1", "price_limit", "suspension_resume"],
+            "institution_rule_definition_allowed": False,
+            "trading_layer_read_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:repair_formal_institution_rule_definition_persistence_package_inputs",
+        }
+    )
+
+
 def _validate_p7c_contract_review_for_explicit_institution_rule_definition_open_gate(
     report: dict[str, Any] | None,
     issues: list[str],
@@ -4632,6 +4717,71 @@ def _append_formal_institution_rule_definition_downstream_issue(
     ]:
         if payload.get(field) not in {None, False}:
             issues.append("formal_institution_rule_definition_downstream_gate_open")
+
+
+def _validate_p7e_report_for_formal_institution_rule_definition_persistence_package(
+    report: dict[str, Any] | None,
+    issues: list[str],
+) -> None:
+    if not isinstance(report, dict):
+        issues.append("formal_institution_rule_definition_persistence_package_requires_p7e_pass")
+        return
+    if report.get("audit_id") != "formal_institution_rule_definition_audit_v0.1":
+        issues.append("formal_institution_rule_definition_persistence_package_requires_p7e_pass")
+    if report.get("formal_institution_rule_definition_result") != "pass":
+        issues.append("formal_institution_rule_definition_persistence_package_requires_p7e_pass")
+    if (
+        report.get("formal_institution_rule_definition_status")
+        != "formal_institution_rule_definition_audited_for_rule_definition_only"
+    ):
+        issues.append("formal_institution_rule_definition_persistence_package_requires_p7e_pass")
+    if report.get("institution_rule_definition_allowed") is not True:
+        issues.append("formal_institution_rule_definition_persistence_package_requires_p7e_pass")
+    _append_formal_institution_rule_definition_persistence_package_downstream_issue(report, issues)
+
+
+def _validate_formal_institution_rule_definition_payload_for_persistence_package(
+    definition_payload: dict[str, Any] | None,
+    issues: list[str],
+) -> None:
+    if not isinstance(definition_payload, dict):
+        issues.append("formal_institution_rule_definition_persistence_package_requires_definition_payload")
+        return
+    if definition_payload.get("artifact_id") != "formal_institution_rule_definition_input_v0.1":
+        issues.append("formal_institution_rule_definition_persistence_package_requires_definition_payload")
+    if definition_payload.get("definition_scope") != "institution_rule_definition_only":
+        issues.append("formal_institution_rule_definition_persistence_package_requires_rule_definition_only_scope")
+    if definition_payload.get("definition_input_status") != "ready_for_audit":
+        issues.append("formal_institution_rule_definition_persistence_package_requires_ready_definition_payload")
+    consumed_reviewed_draft_inputs = definition_payload.get("consumed_reviewed_draft_inputs")
+    if consumed_reviewed_draft_inputs != ["t1", "price_limit", "suspension_resume"]:
+        issues.append("formal_institution_rule_definition_persistence_package_requires_full_reviewed_draft_coverage")
+    if definition_payload.get("field_contract_status") != "complete":
+        issues.append("formal_institution_rule_definition_persistence_package_requires_complete_field_contract")
+    if definition_payload.get("boundary_review_status") != "clean":
+        issues.append("formal_institution_rule_definition_persistence_package_requires_clean_boundary")
+    evidence_refs = definition_payload.get("evidence_refs")
+    if not isinstance(evidence_refs, list) or not evidence_refs:
+        issues.append("formal_institution_rule_definition_persistence_package_requires_evidence_refs")
+    formal_definition_fields = definition_payload.get("formal_definition_fields")
+    if not isinstance(formal_definition_fields, list) or not formal_definition_fields:
+        issues.append("formal_institution_rule_definition_persistence_package_requires_formal_definition_fields")
+    if definition_payload.get("institution_rule_definition_allowed") is not True:
+        issues.append("formal_institution_rule_definition_persistence_package_requires_rule_definition_only_gate_open")
+    _append_formal_institution_rule_definition_persistence_package_downstream_issue(definition_payload, issues)
+
+
+def _append_formal_institution_rule_definition_persistence_package_downstream_issue(
+    payload: dict[str, Any],
+    issues: list[str],
+) -> None:
+    for field in [
+        "trading_layer_read_allowed",
+        "signal_generation_allowed",
+        "backtest_execution_allowed",
+    ]:
+        if payload.get(field) not in {None, False}:
+            issues.append("formal_institution_rule_definition_persistence_package_downstream_gate_open")
 
 
 def _validate_p7b_draft_review_for_institution_rule_definition_contract_review(

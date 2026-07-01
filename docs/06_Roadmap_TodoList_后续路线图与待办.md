@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-07-01
-**当前基线**: `formal_institution_rule_definition_audited_for_rule_definition_only`
+**当前基线**: `formal_institution_rule_definition_persistence_package_prepared`
 **文档性质**: 未来待办、路线图与优先级安排
 
 ## 1. 当前基线
@@ -29,6 +29,8 @@
 - 制度规则定义入口已开放为 rule-definition-only。
 - 已实现 P7e 正式制度规则定义审计。
 - formal institution rule definition input 已可在 rule-definition-only 范围内完成审计。
+- 已实现 P8 正式制度规则定义持久化包准备。
+- formal institution rule definition persistence package 已准备，真实持久化尚未执行。
 - 真实生产路径 `Z:\asteria-trading-labs-data` 尚未执行人工确认写入。
 - 尚未开放真实 trading layer read。
 - 制度规则定义入口只开放到 rule-definition-only；正式规则文件尚未生成，signal generation 与 backtest execution 仍未开放。
@@ -388,12 +390,26 @@ P7 完整完成条件：
 - formal institution rule definition input 的字段契约、边界与证据已经齐备。
 - 仍不开放 trading layer read、signal generation、backtest execution。
 
-待办：
+已完成：
 
-- [ ] formal institution rule definition persistence/package 规格。
-- [ ] formal institution rule definition persistence/package implementation plan。
-- [ ] TDD 覆盖 pass / blocked / forbidden field / hard gate。
-- [ ] 明确是否只生成 persistence package，还是进入受控写入前审计。
+- [x] formal institution rule definition persistence/package 规格。
+- [x] formal institution rule definition persistence/package implementation plan。
+- [x] TDD 覆盖 pass / blocked / forbidden field / hard gate。
+- [x] 明确 P8 只生成 persistence package prepared report，不执行正式持久化。
+
+规格与计划：
+
+[2026-07-01-p8-formal-institution-rule-definition-persistence-package-design.md](./superpowers/specs/2026-07-01-p8-formal-institution-rule-definition-persistence-package-design.md)
+
+[2026-07-01-p8-formal-institution-rule-definition-persistence-package.md](./superpowers/plans/2026-07-01-p8-formal-institution-rule-definition-persistence-package.md)
+
+P8 当前目标状态：
+
+`formal_institution_rule_definition_persistence_package_prepared`
+
+focused 验证：`tests.test_tdx_local_first_batch` 通过，`88 tests OK`
+
+全量验证：`279 tests OK`
 
 ## 11. P9：信号与回测
 
