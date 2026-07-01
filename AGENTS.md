@@ -48,8 +48,9 @@ python -m unittest tests.test_ashare_intake_validator -v
 - 测试框架：标准库 `unittest`。
 - 测试文件命名：`test_*.py`。
 - 新增审计阶段时，至少补三类测试：`pass`、`blocked`、禁用字段校验。
-- 三道硬闸默认必须保持 `false`：
-  - `institution_rule_definition_allowed`
+- P7d 之后，`institution_rule_definition_allowed=True` 只表示制度规则定义入口开放为 `rule-definition-only`。
+- 下游硬闸默认必须保持 `false`：
+  - `trading_layer_read_allowed`
   - `signal_generation_allowed`
   - `backtest_execution_allowed`
 

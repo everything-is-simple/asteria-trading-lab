@@ -29,7 +29,7 @@
 - 制度规则定义入口已开放为 rule-definition-only。
 - 真实生产路径 `Z:\asteria-trading-labs-data` 尚未执行人工确认写入。
 - 尚未开放真实 trading layer read。
-- 尚未开放正式制度规则定义、signal generation 或 backtest execution。
+- 制度规则定义入口只开放到 rule-definition-only；正式规则文件尚未生成，signal generation 与 backtest execution 仍未开放。
 
 事实进度记录见：
 
