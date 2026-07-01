@@ -1822,6 +1822,71 @@ def write_candidate_table_to_formal_data_root_when_explicitly_confirmed(
     )
 
 
+def audit_trading_layer_readiness_for_candidate_table_when_explicitly_requested(
+    formal_candidate_table_manifest_path: str | Path,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    generated_at_value = generated_at or datetime.now().astimezone().isoformat(timespec="seconds")
+    manifest_path = Path(formal_candidate_table_manifest_path)
+    issues: list[str] = []
+
+    if not manifest_path.exists():
+        return _candidate_table_trading_readiness_blocked_report(
+            generated_at_value,
+            ["candidate_table_formal_manifest_missing"],
+        )
+
+    manifest = _read_json_file(manifest_path)
+    if manifest is None:
+        return _candidate_table_trading_readiness_blocked_report(
+            generated_at_value,
+            ["candidate_table_formal_manifest_invalid"],
+        )
+
+    _validate_candidate_table_formal_manifest_for_trading_readiness(manifest, issues)
+    table_path = _candidate_table_jsonl_path_from_manifest(manifest_path, manifest, issues)
+    table_exists = table_path.exists()
+    rows = _read_candidate_table_jsonl(table_path) if not issues else None
+    if rows is None:
+        issues.append("candidate_table_formal_jsonl_invalid" if table_exists else "candidate_table_formal_jsonl_missing")
+        rows = []
+    elif not table_exists:
+        issues.append("candidate_table_formal_jsonl_missing")
+    _validate_candidate_table_formal_rows_for_trading_readiness(
+        rows,
+        manifest.get("candidate_table_row_count"),
+        issues,
+    )
+
+    if issues:
+        return _candidate_table_trading_readiness_blocked_report(generated_at_value, issues)
+
+    return _strip_forbidden_fields(
+        {
+            "result": "pass",
+            "generated_at": generated_at_value,
+            "research_only": True,
+            "audit_id": "candidate_table_trading_layer_readiness_audit_v0.1",
+            "candidate_table_trading_layer_readiness_audit_result": "pass",
+            "candidate_table_trading_layer_readiness_checked": True,
+            "candidate_table_trading_layer_readiness_status": "ready_for_trading_layer_read_gate_review",
+            "formal_candidate_table_manifest_path": str(manifest_path),
+            "formal_candidate_table_path": str(table_path),
+            "candidate_table_row_count": len(rows),
+            "candidate_table_update_performed": True,
+            "candidate_table_update_target": "formal_data_root",
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "trading_layer_read_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:write_p5_implementation_plan_for_trading_layer_readiness_audit",
+        }
+    )
+
+
 def materialize_default_add_on_price_limit_core_malf_research_bundle(
     data_root: str | Path,
     tdx_root: str | Path,
@@ -3818,6 +3883,127 @@ def _candidate_table_formal_blocked_report(
             "next_action": "action:repair_formal_candidate_table_write_inputs",
         }
     )
+
+
+def _candidate_table_trading_readiness_blocked_report(
+    generated_at: str,
+    issues: list[str],
+) -> dict[str, Any]:
+    if not issues:
+        issues = ["candidate_table_trading_readiness_blocked"]
+    return _strip_forbidden_fields(
+        {
+            "result": "blocked",
+            "generated_at": generated_at,
+            "research_only": True,
+            "audit_id": "candidate_table_trading_layer_readiness_audit_v0.1",
+            "candidate_table_trading_layer_readiness_audit_result": "blocked",
+            "candidate_table_trading_layer_readiness_checked": False,
+            "candidate_table_trading_layer_readiness_status": "blocked_before_trading_layer_read_gate_review",
+            "issues": issues,
+            "candidate_table_row_count": 0,
+            "candidate_table_update_performed": False,
+            "candidate_table_update_target": "formal_data_root",
+            "qualification_record_write_allowed": False,
+            "candidate_table_update_allowed": False,
+            "formal_data_write_allowed": False,
+            "institution_rule_definition_allowed": False,
+            "trading_layer_read_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:repair_formal_candidate_table_before_trading_layer_readiness_audit",
+        }
+    )
+
+
+def _validate_candidate_table_formal_manifest_for_trading_readiness(
+    manifest: dict[str, Any],
+    issues: list[str],
+) -> None:
+    if manifest.get("manifest_id") != "candidate_table_formal_manifest_v0.1":
+        issues.append("candidate_table_formal_manifest_invalid")
+    if manifest.get("candidate_table_update_performed") is not True:
+        issues.append("candidate_table_formal_manifest_update_not_performed")
+    if manifest.get("candidate_table_update_target") != "formal_data_root":
+        issues.append("candidate_table_trading_readiness_not_formal_target")
+    if manifest.get("candidate_table_update_allowed") is not False:
+        issues.append("candidate_table_trading_readiness_downstream_gate_open")
+    row_count = manifest.get("candidate_table_row_count")
+    if not isinstance(row_count, int) or isinstance(row_count, bool) or row_count <= 0:
+        issues.append("candidate_table_formal_row_count_mismatch")
+    if manifest.get("candidate_table_file") != "candidate-table.jsonl":
+        issues.append("candidate_table_formal_jsonl_missing")
+    if _first_forbidden_output_field_present(manifest) is not None:
+        issues.append("candidate_table_trading_readiness_forbidden_output_field_present")
+    for field in [
+        "institution_rule_definition_allowed",
+        "trading_layer_read_allowed",
+        "signal_generation_allowed",
+        "backtest_execution_allowed",
+    ]:
+        if manifest.get(field) is not False:
+            issues.append("candidate_table_trading_readiness_downstream_gate_open")
+
+
+def _candidate_table_jsonl_path_from_manifest(
+    manifest_path: Path,
+    manifest: dict[str, Any],
+    issues: list[str],
+) -> Path:
+    table_file = manifest.get("candidate_table_file")
+    if not isinstance(table_file, str) or not table_file:
+        issues.append("candidate_table_formal_jsonl_missing")
+        return manifest_path.parent / "candidate-table.jsonl"
+
+    candidate_path = Path(table_file)
+    if candidate_path.is_absolute() or len(candidate_path.parts) != 1 or table_file in {".", ".."}:
+        issues.append("candidate_table_formal_jsonl_invalid")
+        return manifest_path.parent / "candidate-table.jsonl"
+    if ".." in candidate_path.parts:
+        issues.append("candidate_table_formal_jsonl_invalid")
+        return manifest_path.parent / "candidate-table.jsonl"
+    return manifest_path.parent / candidate_path
+
+
+def _validate_candidate_table_formal_rows_for_trading_readiness(
+    rows: list[dict[str, Any]],
+    expected_count: Any,
+    issues: list[str],
+) -> None:
+    if not rows:
+        issues.append("candidate_table_formal_jsonl_invalid")
+        return
+    if len(rows) != expected_count:
+        issues.append("candidate_table_formal_row_count_mismatch")
+
+    seen_row_ids: set[str] = set()
+    required_fields = ["candidate_table_row_id", "qualification_record_id", "ts_code"]
+    for row in rows:
+        if _first_forbidden_output_field_present(row) is not None:
+            issues.append("candidate_table_trading_readiness_forbidden_output_field_present")
+            continue
+        for field in required_fields:
+            if not row.get(field):
+                issues.append("candidate_table_formal_required_field_missing")
+        row_id = row.get("candidate_table_row_id")
+        if isinstance(row_id, str):
+            if row_id in seen_row_ids:
+                issues.append("candidate_table_formal_duplicate_row_id")
+            seen_row_ids.add(row_id)
+        if row.get("candidate_table_update_performed") is not True:
+            issues.append("candidate_table_formal_required_field_missing")
+        if row.get("candidate_table_update_target") != "formal_data_root":
+            issues.append("candidate_table_trading_readiness_not_formal_target")
+        if row.get("candidate_table_update_allowed") is not False:
+            issues.append("candidate_table_trading_readiness_downstream_gate_open")
+        for field in [
+            "institution_rule_definition_allowed",
+            "trading_layer_read_allowed",
+            "signal_generation_allowed",
+            "backtest_execution_allowed",
+        ]:
+            if row.get(field) is not False:
+                issues.append("candidate_table_trading_readiness_downstream_gate_open")
 
 
 def _backup_existing_candidate_table_dir(table_root: Path, generated_at: str) -> Path | None:
