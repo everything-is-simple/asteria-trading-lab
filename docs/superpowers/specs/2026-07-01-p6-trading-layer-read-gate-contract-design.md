@@ -1,8 +1,25 @@
 # P6 Trading Layer Read Gate Contract 设计
 
 **日期：** 2026-07-01
-**状态：** 待评审草案
+**状态：** 已评审定版，可写 implementation plan；尚未实现
 **范围：** P5 formal candidate table readiness audit 之后、真实 trading layer read 开放之前的只读 consumer contract 设计
+
+## 0. Spec Review 结论
+
+本规格已完成 P6 前置评审，结论为：可以进入 implementation plan 编写阶段。
+
+评审确认：
+
+- 已明确 P6 读取什么：P5 readiness report、formal candidate table manifest、Method/PM gate、Backtest Input gate、execution constraint / feasibility audit-only artifact。
+- 已明确 P6 审什么：P5 pass、formal target、Method/PM readiness、Backtest Input readiness、execution artifact audit-only 语义、forbidden fields、下游硬闸。
+- 已明确 P6 阻断什么：缺 P5 pass、缺 Method/PM、缺 Backtest Input、execution facts 被写成 institution rules、混入 signal/order/position/backtest 语义。
+- 已明确 P6 输出什么：pass / blocked report contract，以及 `ready_for_trading_layer_read_contract_review` 状态。
+- 已明确 P6 第一版仍保持 `trading_layer_read_allowed=False`。
+- 已明确 P6 不进入 P7 制度规则定义，也不进入 P8 signal / backtest。
+
+评审后的下一步：
+
+`docs/superpowers/plans/2026-07-01-p6-trading-layer-read-gate-contract.md`
 
 ## 1. 当前系统位置
 
@@ -36,7 +53,7 @@ P6 定义 trading layer read gate / consumer contract。
 
 P6 第一版仍是规格设计，不开放真实 trading layer read。
 
-当前建议：P6 pass 仍保持 `trading_layer_read_allowed=False`，只推进到：
+评审结论：P6 pass 仍保持 `trading_layer_read_allowed=False`，只推进到：
 
 `ready_for_trading_layer_read_contract_review`
 

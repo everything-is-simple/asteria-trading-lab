@@ -1,6 +1,6 @@
 # 06_Roadmap_TodoList — 后续路线图与待办
 
-**版本**: v0.8
+**版本**: v0.9
 **日期**: 2026-07-01
 **当前基线**: `candidate_table_trading_layer_readiness_audit_passed`
 **文档性质**: 未来待办、路线图与优先级安排
@@ -201,24 +201,32 @@ P4b 已完成设计：
 
 待办：
 
-- [ ] 设计 P6 read gate contract 规格。
-- [ ] 明确 trading layer read gate 可以读取哪些 artifact。
-- [ ] 明确缺 Method/PM plan 时如何 blocked。
-- [ ] 明确缺 Backtest Input gate 时如何 blocked。
-- [ ] 明确 execution constraint snapshot 与 execution feasibility verdict 如何作为只读输入。
-- [ ] 明确 candidate table readiness audit 如何作为前置证明。
-- [ ] 明确 P6 第一版是否仍保持 `trading_layer_read_allowed=false`，只推进到下一 review gate。
-- [ ] 保持 signal generation 与 backtest execution 关闭。
+- [x] 设计 P6 read gate contract 规格。
+- [x] 明确 trading layer read gate 可以读取哪些 artifact。
+- [x] 明确缺 Method/PM plan 时如何 blocked。
+- [x] 明确缺 Backtest Input gate 时如何 blocked。
+- [x] 明确 execution constraint snapshot 与 execution feasibility verdict 如何作为只读输入。
+- [x] 明确 candidate table readiness audit 如何作为前置证明。
+- [x] 明确 P6 第一版仍保持 `trading_layer_read_allowed=false`，只推进到下一 review gate。
+- [x] 保持 signal generation 与 backtest execution 关闭。
+- [x] 编写 P6 implementation plan。
+- [ ] 按 TDD 编写 P6 pass / blocked / forbidden field / hard gate 测试。
+- [ ] 实现 P6 read gate contract audit。
+- [ ] 跑 focused 与全量验证。
 
-建议规格：
+已定版规格：
 
 [2026-07-01-p6-trading-layer-read-gate-contract-design.md](./superpowers/specs/2026-07-01-p6-trading-layer-read-gate-contract-design.md)
+
+已创建实施计划：
+
+[2026-07-01-p6-trading-layer-read-gate-contract.md](./superpowers/plans/2026-07-01-p6-trading-layer-read-gate-contract.md)
 
 ## 9. P7：制度规则定义
 
 启动条件：
 
-- P6 read gate contract 已完成规格设计。
+- P6 read gate contract 已完成规格设计与实现。
 - Method/PM 与 execution constraint/verdict 之间的只读消费关系已明确。
 - 制度事实仍不被误当成交易规则。
 

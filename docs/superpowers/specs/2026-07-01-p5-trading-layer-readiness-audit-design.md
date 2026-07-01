@@ -1,8 +1,23 @@
 # P5 Trading Layer Readiness Audit 设计
 
 **日期：** 2026-07-01
-**状态：** 待评审草案
+**状态：** 已实现并测试通过，归档为 P5 设计依据
 **范围：** formal candidate table 写入完成之后、任何 trading layer read 开放之前的只读 readiness audit
+
+## 0. 归档说明
+
+本规格已完成评审、实施计划、代码实现、导出与测试。
+
+已实现入口：
+
+`audit_trading_layer_readiness_for_candidate_table_when_explicitly_requested`
+
+当前归档结论：
+
+- P5 pass 只表示 `ready_for_trading_layer_read_gate_review`。
+- `trading_layer_read_allowed` 仍保持 `False`。
+- `institution_rule_definition_allowed`、`signal_generation_allowed`、`backtest_execution_allowed` 仍保持 `False`。
+- 本规格不再是待评审草案；后续工作已转入 P6 trading layer read gate / consumer contract。
 
 ## 1. 当前系统位置
 
