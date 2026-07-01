@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-07-01
-**当前基线**: `ready_for_trading_layer_read_contract_review`
+**当前基线**: `ready_for_institution_rule_definition_draft_review`
 **文档性质**: 未来待办、路线图与优先级安排
 
 ## 1. 当前基线
@@ -21,9 +21,11 @@
 - formal candidate table 已准备进入未来 trading layer read gate contract review。
 - 已实现 P6 trading layer read gate / consumer contract audit。
 - 系统已准备进入 read contract review。
+- 已实现 P7 制度规则定义准备审计。
+- T+1、涨跌停、停复牌只作为规则草案输入通过准备度审计。
 - 真实生产路径 `Z:\asteria-trading-labs-data` 尚未执行人工确认写入。
 - 尚未开放真实 trading layer read。
-- 尚未开放 signal generation 或 backtest execution。
+- 尚未开放正式制度规则定义、signal generation 或 backtest execution。
 
 事实进度记录见：
 
@@ -225,7 +227,7 @@ P4b 已完成设计：
 
 [2026-07-01-p6-trading-layer-read-gate-contract.md](./superpowers/plans/2026-07-01-p6-trading-layer-read-gate-contract.md)
 
-## 9. P7：制度规则定义
+## 9. P7：制度规则定义准备
 
 启动条件：
 
@@ -233,20 +235,39 @@ P4b 已完成设计：
 - Method/PM 与 execution constraint/verdict 之间的只读消费关系已明确。
 - 制度事实仍不被误当成交易规则。
 
-待办：
+已完成：
 
-- [ ] 起草涨跌停规则草案。
-- [ ] 起草停复牌规则草案。
-- [ ] 起草 T+1 相关约束草案。
-- [ ] 明确规则层与 MALF 层的边界。
-- [ ] 新增 pass / blocked / 禁用字段校验测试。
-- [ ] 继续保持 signal 与 backtest 关闭。
+- [x] 起草 P7 制度规则定义准备 spec。
+- [x] 明确涨跌停、停复牌、T+1 只作为规则草案输入。
+- [x] 明确 P7 不生成 signal、不运行 backtest。
+- [x] 编写 P7 implementation plan。
+- [x] 按 TDD 编写 pass / blocked / forbidden field / hard gates false 测试。
+- [x] 实现 `audit_institution_rule_definition_readiness_when_explicitly_requested`。
+- [x] 从 `data_sources.tdx_local` 导出 P7 audit 入口。
+- [x] focused 验证 `tests.test_tdx_local_first_batch` 通过。
+- [x] 跑全量验证。
+
+规格与计划：
+
+[2026-07-01-p7-institution-rule-definition-readiness-design.md](./superpowers/specs/2026-07-01-p7-institution-rule-definition-readiness-design.md)
+
+[2026-07-01-p7-institution-rule-definition-readiness.md](./superpowers/plans/2026-07-01-p7-institution-rule-definition-readiness.md)
+
+当前边界：
+
+- P7 pass 只表示 `ready_for_institution_rule_definition_draft_review`。
+- T+1、涨跌停、停复牌仍只是 `draft_input_only=True` 的草案输入。
+- `institution_rule_definition_allowed=False`
+- `trading_layer_read_allowed=False`
+- `signal_generation_allowed=False`
+- `backtest_execution_allowed=False`
+- 全量验证：`256 tests OK`
 
 ## 10. P8：信号与回测
 
 启动条件：
 
-- 制度规则定义完成。
+- 制度规则定义准备审计完成，后续仍需独立规则草案复核与正式定义 gate。
 - trading layer read 通过独立审计。
 - signal generation gate 经过显式开放审计。
 

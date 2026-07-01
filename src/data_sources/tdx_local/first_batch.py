@@ -31,11 +31,18 @@ FORBIDDEN_OUTPUT_FIELDS = {
     "buy_signal",
     "sell_signal",
     "trade_accept",
+    "trade_reject",
+    "trade_defer",
+    "signal_decision",
     "target_position",
     "position_size",
     "ashare_t1_action",
     "limit_up_strategy",
     "limit_down_strategy",
+    "industry_hot_score",
+    "liquidity_rank_as_applicability",
+    "rhythm_meaning_override",
+    "tachibana_applicability_override",
 }
 
 
@@ -1934,6 +1941,68 @@ def audit_trading_layer_read_gate_contract_when_explicitly_requested(
             "signal_generation_allowed": False,
             "backtest_execution_allowed": False,
             "next_action": "action:review_trading_layer_read_gate_contract",
+        }
+    )
+
+
+def audit_institution_rule_definition_readiness_when_explicitly_requested(
+    p6_contract_report: dict[str, Any] | None,
+    t1_rule_draft_input: dict[str, Any] | None,
+    price_limit_rule_draft_input: dict[str, Any] | None,
+    suspension_resume_rule_draft_input: dict[str, Any] | None,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    generated_at_value = generated_at or datetime.now().astimezone().isoformat(timespec="seconds")
+    issues: list[str] = []
+
+    inputs = [
+        p6_contract_report,
+        t1_rule_draft_input,
+        price_limit_rule_draft_input,
+        suspension_resume_rule_draft_input,
+    ]
+    if any(isinstance(item, dict) and _first_forbidden_output_field_present(item) is not None for item in inputs):
+        issues.append("institution_rule_definition_readiness_forbidden_output_field_present")
+
+    _validate_p6_contract_for_institution_rule_definition_readiness(p6_contract_report, issues)
+    _validate_rule_draft_input_for_institution_rule_definition_readiness(
+        t1_rule_draft_input,
+        "t1",
+        "institution_rule_definition_readiness_requires_t1_draft_input",
+        issues,
+    )
+    _validate_rule_draft_input_for_institution_rule_definition_readiness(
+        price_limit_rule_draft_input,
+        "price_limit",
+        "institution_rule_definition_readiness_requires_price_limit_draft_input",
+        issues,
+    )
+    _validate_rule_draft_input_for_institution_rule_definition_readiness(
+        suspension_resume_rule_draft_input,
+        "suspension_resume",
+        "institution_rule_definition_readiness_requires_suspension_resume_draft_input",
+        issues,
+    )
+
+    if issues:
+        return _institution_rule_definition_readiness_blocked_report(generated_at_value, issues)
+
+    return _strip_forbidden_fields(
+        {
+            "result": "pass",
+            "generated_at": generated_at_value,
+            "research_only": True,
+            "audit_id": "institution_rule_definition_readiness_audit_v0.1",
+            "institution_rule_definition_readiness_audit_result": "pass",
+            "institution_rule_definition_readiness_status": "ready_for_institution_rule_definition_draft_review",
+            "p6_contract_audit_result": "pass",
+            "required_rule_draft_inputs": ["t1", "price_limit", "suspension_resume"],
+            "draft_input_only": True,
+            "institution_rule_definition_allowed": False,
+            "trading_layer_read_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:review_institution_rule_definition_drafts",
         }
     )
 
@@ -3989,6 +4058,87 @@ def _trading_layer_read_gate_contract_blocked_report(
             "next_action": "action:repair_trading_layer_read_gate_contract_inputs",
         }
     )
+
+
+def _institution_rule_definition_readiness_blocked_report(
+    generated_at: str,
+    issues: list[str],
+) -> dict[str, Any]:
+    if not issues:
+        issues = ["institution_rule_definition_readiness_blocked"]
+    return _strip_forbidden_fields(
+        {
+            "result": "blocked",
+            "generated_at": generated_at,
+            "research_only": True,
+            "audit_id": "institution_rule_definition_readiness_audit_v0.1",
+            "institution_rule_definition_readiness_audit_result": "blocked",
+            "institution_rule_definition_readiness_status": "blocked_before_institution_rule_definition_draft_review",
+            "issues": sorted(set(issues)),
+            "required_rule_draft_inputs": ["t1", "price_limit", "suspension_resume"],
+            "institution_rule_definition_allowed": False,
+            "trading_layer_read_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_action": "action:repair_institution_rule_definition_readiness_inputs",
+        }
+    )
+
+
+def _validate_p6_contract_for_institution_rule_definition_readiness(
+    report: dict[str, Any] | None,
+    issues: list[str],
+) -> None:
+    if not isinstance(report, dict):
+        issues.append("institution_rule_definition_readiness_requires_p6_contract_pass")
+        return
+    if report.get("audit_id") != "trading_layer_read_gate_contract_audit_v0.1":
+        issues.append("institution_rule_definition_readiness_requires_p6_contract_pass")
+    if report.get("trading_layer_read_gate_contract_audit_result") != "pass":
+        issues.append("institution_rule_definition_readiness_requires_p6_contract_pass")
+    if report.get("trading_layer_read_gate_contract_status") != "ready_for_trading_layer_read_contract_review":
+        issues.append("institution_rule_definition_readiness_requires_p6_contract_pass")
+    if report.get("execution_constraint_audit_only") is not True:
+        issues.append("institution_rule_definition_readiness_requires_p6_contract_pass")
+    _append_institution_rule_definition_readiness_downstream_issue(report, issues)
+
+
+def _validate_rule_draft_input_for_institution_rule_definition_readiness(
+    draft_input: dict[str, Any] | None,
+    expected_input_type: str,
+    missing_issue: str,
+    issues: list[str],
+) -> None:
+    if not isinstance(draft_input, dict):
+        issues.append(missing_issue)
+        return
+    if draft_input.get("rule_draft_input_type") != expected_input_type:
+        issues.append(missing_issue)
+    if draft_input.get("draft_input_only") is not True:
+        issues.append("institution_rule_definition_readiness_requires_draft_input_only")
+    if not _rule_draft_input_passes(draft_input):
+        issues.append(missing_issue)
+    _append_institution_rule_definition_readiness_downstream_issue(draft_input, issues)
+
+
+def _rule_draft_input_passes(draft_input: dict[str, Any]) -> bool:
+    if "result" in draft_input:
+        return draft_input.get("result") == "pass"
+    return draft_input.get("readiness") == "pass"
+
+
+def _append_institution_rule_definition_readiness_downstream_issue(
+    payload: dict[str, Any],
+    issues: list[str],
+) -> None:
+    for field in [
+        "institution_rule_definition_allowed",
+        "trading_layer_read_allowed",
+        "signal_generation_allowed",
+        "backtest_execution_allowed",
+    ]:
+        if payload.get(field) not in {None, False}:
+            issues.append("institution_rule_definition_readiness_downstream_gate_open")
 
 
 def _validate_p5_readiness_for_trading_layer_read_gate(
