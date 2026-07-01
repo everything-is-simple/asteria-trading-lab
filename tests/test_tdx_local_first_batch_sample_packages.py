@@ -5,13 +5,9 @@ import unittest
 
 
 SPLIT_TEST_MODULES = [
-    "tests.test_tdx_local_shortlist_reviews",
-    "tests.test_tdx_local_front_filter_reviews",
-    "tests.test_tdx_local_candidate_table_gates",
-    "tests.test_tdx_local_trading_readiness_gates",
-    "tests.test_tdx_local_rule_definition_gates",
-    "tests.test_tdx_local_shortlist_materialization",
-    "tests.test_tdx_local_first_batch_sample_packages",
+    "tests.test_tdx_local_rule_definition_persistence_package",
+    "tests.test_tdx_local_shortlist_research_bundle",
+    "tests.test_tdx_local_first_batch_sample_package_builders",
 ]
 
 

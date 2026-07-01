@@ -3,10 +3,8 @@ import unittest
 
 
 _SPLIT_TEST_MODULES = (
-    "tests.test_tachibana_catalogs",
-    "tests.test_tachibana_runtime",
-    "tests.test_tachibana_gates",
-    "tests.test_tachibana_cli",
+    "tests.test_ashare_first_batch_cli",
+    "tests.test_ashare_execution_cli",
 )
 
 
