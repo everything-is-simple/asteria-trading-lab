@@ -15,6 +15,9 @@ class TdxLocalRuleDefinitionPersistencePackageTest(TdxLocalFirstBatchSupport):
 
         self.assertEqual(report["result"], "pass")
         self.assertEqual(report["audit_id"], "formal_institution_rule_definition_persistence_package_v0.1")
+        self.assertEqual(report["report_id"], "formal_institution_rule_definition_persistence_package_report_v0.1")
+        self.assertEqual(report["package_id"], "formal_institution_rule_definition_persistence_package_v0.1")
+        self.assertEqual(report["package_version"], "v0.1")
         self.assertEqual(report["formal_institution_rule_definition_persistence_package_result"], "pass")
         self.assertEqual(
             report["formal_institution_rule_definition_persistence_package_status"],

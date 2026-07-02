@@ -25,6 +25,7 @@ from data_sources.tdx_local import (
     audit_first_batch_sample_coverage,
     audit_explicit_institution_rule_definition_open_gate_when_explicitly_requested,
     audit_formal_institution_rule_definition_when_explicitly_requested,
+    audit_formal_institution_rule_definition_write_when_explicitly_requested,
     audit_institution_rule_definition_contract_review_when_explicitly_requested,
     audit_institution_rule_definition_draft_review_gate_when_explicitly_requested,
     audit_institution_rule_definition_readiness_when_explicitly_requested,
@@ -353,6 +354,30 @@ class TdxLocalFirstBatchSupport(unittest.TestCase):
         return {
             "p7e_formal_rule_definition_report": p7e_report,
             "formal_institution_rule_definition_payload": p7e_inputs["formal_institution_rule_definition_input"],
+        }
+
+    def _p8_prepared_package_report(self, root: Path) -> dict[str, object]:
+        inputs = self._p8_formal_rule_definition_persistence_package_inputs(root)
+        report = prepare_formal_institution_rule_definition_persistence_package_when_explicitly_requested(
+            **inputs,
+            generated_at="2026-07-01T16:10:00+08:00",
+        )
+        self.assertEqual(report["result"], "pass")
+        return report
+
+    def _formal_rule_definition_write_audit_request(
+        self,
+        package_report: dict[str, object],
+    ) -> dict[str, object]:
+        return {
+            "write_audit_requested": True,
+            "write_audit_scope": "formal_institution_rule_definition",
+            "target_kind": "formal_rule_definition_file",
+            "target_package_id": package_report["package_id"],
+            "target_package_version": package_report["package_version"],
+            "real_data_root_write_confirmed": False,
+            "manual_confirmation_required": True,
+            "no_trading_no_signal_no_backtest_acknowledged": True,
         }
 
 

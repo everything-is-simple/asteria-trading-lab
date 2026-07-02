@@ -167,6 +167,34 @@ def _formal_institution_rule_definition_persistence_package_blocked_report(
     )
 
 
+def _formal_institution_rule_definition_write_audit_blocked_report(
+    generated_at: str,
+    issues: list[str],
+) -> dict[str, Any]:
+    if not issues:
+        issues = ["formal_institution_rule_definition_write_audit_blocked"]
+    return _strip_forbidden_fields(
+        {
+            "result": "blocked",
+            "generated_at": generated_at,
+            "research_only": True,
+            "audit_id": "formal_institution_rule_definition_write_audit_v0.1",
+            "formal_institution_rule_definition_write_audit_result": "blocked",
+            "formal_institution_rule_definition_write_audit_status": (
+                "blocked_before_formal_institution_rule_definition_explicit_write_confirmation_gate"
+            ),
+            "formal_institution_rule_definition_write_allowed": False,
+            "formal_institution_rule_definition_persistence_performed": False,
+            "issues": sorted(set(issues)),
+            "institution_rule_definition_allowed": False,
+            "trading_layer_read_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_gate": "gate:repair_formal_institution_rule_definition_write_audit_inputs",
+        }
+    )
+
+
 def _validate_p7c_contract_review_for_explicit_institution_rule_definition_open_gate(
     report: dict[str, Any] | None,
     issues: list[str],
@@ -398,6 +426,93 @@ def _append_formal_institution_rule_definition_persistence_package_downstream_is
     ]:
         if payload.get(field) not in {None, False}:
             issues.append("formal_institution_rule_definition_persistence_package_downstream_gate_open")
+
+
+def _validate_p8_package_for_formal_institution_rule_definition_write_audit(
+    report: dict[str, Any] | None,
+    issues: list[str],
+) -> None:
+    if not isinstance(report, dict):
+        issues.append("formal_institution_rule_definition_write_audit_requires_p8_package_pass")
+        return
+    if report.get("audit_id") != "formal_institution_rule_definition_persistence_package_v0.1":
+        issues.append("formal_institution_rule_definition_write_audit_requires_p8_package_pass")
+    if report.get("report_id") != "formal_institution_rule_definition_persistence_package_report_v0.1":
+        issues.append("formal_institution_rule_definition_write_audit_requires_report_id")
+    package_id = report.get("package_id")
+    package_version = report.get("package_version")
+    if not isinstance(package_id, str) or not package_id.strip():
+        issues.append("formal_institution_rule_definition_write_audit_requires_package_identity")
+    if not isinstance(package_version, str) or not package_version.strip():
+        issues.append("formal_institution_rule_definition_write_audit_requires_package_identity")
+    if report.get("formal_institution_rule_definition_persistence_package_result") != "pass":
+        issues.append("formal_institution_rule_definition_write_audit_requires_p8_package_pass")
+    if (
+        report.get("formal_institution_rule_definition_persistence_package_status")
+        != "formal_institution_rule_definition_persistence_package_prepared"
+    ):
+        issues.append("formal_institution_rule_definition_write_audit_requires_p8_package_pass")
+    if report.get("formal_institution_rule_definition_persistence_package_prepared") is not True:
+        issues.append("formal_institution_rule_definition_write_audit_requires_p8_package_pass")
+    if report.get("formal_institution_rule_definition_persistence_performed") is not False:
+        issues.append("formal_institution_rule_definition_write_audit_requires_p8_package_pass")
+    if report.get("formal_institution_rule_definition_write_allowed") not in {None, False}:
+        issues.append("formal_institution_rule_definition_write_audit_requires_write_not_already_allowed")
+    if report.get("package_field_contract_status") != "complete":
+        issues.append("formal_institution_rule_definition_write_audit_requires_p8_package_pass")
+    if report.get("package_boundary_status") != "clean":
+        issues.append("formal_institution_rule_definition_write_audit_requires_p8_package_pass")
+    if report.get("package_evidence_status") != "ready":
+        issues.append("formal_institution_rule_definition_write_audit_requires_p8_package_pass")
+    if report.get("institution_rule_definition_allowed") is not True:
+        issues.append("formal_institution_rule_definition_write_audit_requires_p8_package_pass")
+    if report.get("institution_rule_definition_scope") not in {None, "rule-definition-only"}:
+        issues.append("formal_institution_rule_definition_write_audit_requires_rule_definition_scope")
+    _append_formal_institution_rule_definition_write_audit_downstream_issue(report, issues)
+
+
+def _validate_formal_institution_rule_definition_write_audit_request(
+    request: dict[str, Any] | None,
+    report: dict[str, Any] | None,
+    issues: list[str],
+) -> None:
+    if not isinstance(request, dict):
+        issues.append("formal_institution_rule_definition_write_audit_requires_request")
+        return
+    if request.get("write_audit_requested") is not True:
+        issues.append("formal_institution_rule_definition_write_audit_requires_request")
+    if request.get("write_audit_scope") != "formal_institution_rule_definition":
+        issues.append("formal_institution_rule_definition_write_audit_requires_rule_definition_scope")
+    if request.get("target_kind") != "formal_rule_definition_file":
+        issues.append("formal_institution_rule_definition_write_audit_requires_formal_rule_file_target")
+    if isinstance(report, dict):
+        if (
+            request.get("target_package_id") != report.get("package_id")
+            or request.get("target_package_version") != report.get("package_version")
+        ):
+            issues.append("formal_institution_rule_definition_write_audit_package_identity_mismatch")
+    else:
+        issues.append("formal_institution_rule_definition_write_audit_package_identity_mismatch")
+    if request.get("real_data_root_write_confirmed") is not False:
+        issues.append("formal_institution_rule_definition_write_audit_rejects_early_real_data_root_confirmation")
+    if request.get("manual_confirmation_required") is not True:
+        issues.append("formal_institution_rule_definition_write_audit_requires_manual_confirmation_gate")
+    if request.get("no_trading_no_signal_no_backtest_acknowledged") is not True:
+        issues.append("formal_institution_rule_definition_write_audit_requires_no_downstream_acknowledgement")
+    _append_formal_institution_rule_definition_write_audit_downstream_issue(request, issues)
+
+
+def _append_formal_institution_rule_definition_write_audit_downstream_issue(
+    payload: dict[str, Any],
+    issues: list[str],
+) -> None:
+    for field in [
+        "trading_layer_read_allowed",
+        "signal_generation_allowed",
+        "backtest_execution_allowed",
+    ]:
+        if payload.get(field) not in {None, False}:
+            issues.append("formal_institution_rule_definition_write_audit_downstream_gate_open")
 
 
 def _validate_p7b_draft_review_for_institution_rule_definition_contract_review(

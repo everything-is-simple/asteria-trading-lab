@@ -381,6 +381,9 @@ def prepare_formal_institution_rule_definition_persistence_package_when_explicit
             "generated_at": generated_at_value,
             "research_only": True,
             "audit_id": "formal_institution_rule_definition_persistence_package_v0.1",
+            "report_id": "formal_institution_rule_definition_persistence_package_report_v0.1",
+            "package_id": "formal_institution_rule_definition_persistence_package_v0.1",
+            "package_version": "v0.1",
             "formal_institution_rule_definition_persistence_package_result": "pass",
             "formal_institution_rule_definition_persistence_package_status": (
                 "formal_institution_rule_definition_persistence_package_prepared"
@@ -393,9 +396,68 @@ def prepare_formal_institution_rule_definition_persistence_package_when_explicit
             "package_boundary_status": "clean",
             "package_evidence_status": "ready",
             "institution_rule_definition_allowed": True,
+            "institution_rule_definition_scope": "rule-definition-only",
             "trading_layer_read_allowed": False,
             "signal_generation_allowed": False,
             "backtest_execution_allowed": False,
             "next_action": "action:audit_formal_institution_rule_definition_write_when_explicitly_requested",
+        }
+    )
+
+
+def audit_formal_institution_rule_definition_write_when_explicitly_requested(
+    formal_rule_definition_persistence_package_report: dict[str, Any] | None,
+    formal_rule_definition_write_audit_request: dict[str, Any] | None,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    generated_at_value = generated_at or datetime.now().astimezone().isoformat(timespec="seconds")
+    issues: list[str] = []
+
+    inputs = [
+        formal_rule_definition_persistence_package_report,
+        formal_rule_definition_write_audit_request,
+    ]
+    if any(isinstance(item, dict) and _first_forbidden_output_field_present(item) is not None for item in inputs):
+        issues.append("formal_institution_rule_definition_write_audit_forbidden_output_field_present")
+
+    _validate_p8_package_for_formal_institution_rule_definition_write_audit(
+        formal_rule_definition_persistence_package_report,
+        issues,
+    )
+    _validate_formal_institution_rule_definition_write_audit_request(
+        formal_rule_definition_write_audit_request,
+        formal_rule_definition_persistence_package_report,
+        issues,
+    )
+
+    if issues:
+        return _formal_institution_rule_definition_write_audit_blocked_report(
+            generated_at_value,
+            issues,
+        )
+
+    assert isinstance(formal_rule_definition_persistence_package_report, dict)
+    return _strip_forbidden_fields(
+        {
+            "result": "pass",
+            "generated_at": generated_at_value,
+            "research_only": True,
+            "audit_id": "formal_institution_rule_definition_write_audit_v0.1",
+            "formal_institution_rule_definition_write_audit_result": "pass",
+            "formal_institution_rule_definition_write_audit_status": (
+                "ready_for_formal_institution_rule_definition_explicit_write_confirmation_gate"
+            ),
+            "formal_institution_rule_definition_write_allowed": False,
+            "formal_institution_rule_definition_persistence_performed": False,
+            "source_package_id": formal_rule_definition_persistence_package_report.get("package_id"),
+            "source_package_version": formal_rule_definition_persistence_package_report.get("package_version"),
+            "institution_rule_definition_allowed": True,
+            "institution_rule_definition_scope": "rule-definition-only",
+            "trading_layer_read_allowed": False,
+            "signal_generation_allowed": False,
+            "backtest_execution_allowed": False,
+            "next_gate": "gate:formal_institution_rule_definition_explicit_write_confirmation",
+            "package_staleness_policy": "not_enforced_v0.1",
+            "write_audit_idempotency_policy": "same_package_identity_is_idempotent_v0.1",
         }
     )

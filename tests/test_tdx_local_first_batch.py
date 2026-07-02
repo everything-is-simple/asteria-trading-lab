@@ -12,6 +12,7 @@ SPLIT_TEST_MODULES = [
     "tests.test_tdx_local_rule_definition_gates",
     "tests.test_tdx_local_shortlist_materialization",
     "tests.test_tdx_local_first_batch_sample_packages",
+    "tests.test_tdx_local_rule_definition_write_audit",
 ]
 
 

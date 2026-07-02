@@ -1,8 +1,8 @@
 # 06_Roadmap_TodoList — 后续路线图与待办
 
-**版本**: v1.0
-**日期**: 2026-07-01
-**当前基线**: `formal_institution_rule_definition_persistence_package_prepared`
+**版本**: v1.1
+**日期**: 2026-07-02
+**当前基线**: `ready_for_formal_institution_rule_definition_explicit_write_confirmation_gate`
 **文档性质**: 未来待办、路线图与优先级安排
 
 ## 1. 当前基线
@@ -31,7 +31,10 @@
 - formal institution rule definition input 已可在 rule-definition-only 范围内完成审计。
 - 已实现 P8 正式制度规则定义持久化包准备。
 - formal institution rule definition persistence package 已准备，真实持久化尚未执行。
+- 已实现 P8a 正式制度规则定义写入前审计。
+- 系统已准备进入后续显式写入确认 gate，但 `formal_institution_rule_definition_write_allowed=False`。
 - 真实生产路径 `Z:\asteria-trading-labs-data` 尚未执行人工确认写入。
+- 正式制度规则文件尚未写入。
 - 尚未开放真实 trading layer read。
 - 制度规则定义入口只开放到 rule-definition-only；正式规则文件尚未生成，signal generation 与 backtest execution 仍未开放。
 
@@ -411,11 +414,52 @@ focused 验证：`tests.test_tdx_local_first_batch` 通过，`88 tests OK`
 
 全量验证：`279 tests OK`
 
-## 11. P9：信号与回测
+## 11. P8a：正式制度规则定义写入前审计
 
 启动条件：
 
-- 正式制度规则定义文件或其持久化包已通过独立 gate。
+- P8 formal institution rule definition persistence package 已通过。
+- P8 report 具备 `report_id / package_id / package_version` 链路身份。
+- 仍不执行真实写入，不开放 trading layer read、signal generation、backtest execution。
+
+已完成：
+
+- [x] formal institution rule definition write-audit 规格。
+- [x] formal institution rule definition write-audit implementation plan。
+- [x] TDD 覆盖 pass / blocked / package identity mismatch / forbidden field / hard gate / idempotency。
+- [x] 明确 pass 只表示 `ready_for_formal_institution_rule_definition_explicit_write_confirmation_gate`。
+- [x] 明确 `formal_institution_rule_definition_write_allowed=False`。
+- [x] 明确不生成正式规则文件、不写真实数据根。
+
+规格与计划：
+
+[2026-07-02-formal-institution-rule-definition-write-audit-design.md](./superpowers/specs/2026-07-02-formal-institution-rule-definition-write-audit-design.md)
+
+[2026-07-02-formal-institution-rule-definition-write-audit.md](./superpowers/plans/2026-07-02-formal-institution-rule-definition-write-audit.md)
+
+P8a 当前目标状态：
+
+`ready_for_formal_institution_rule_definition_explicit_write_confirmation_gate`
+
+focused 验证：`tests.test_tdx_local_rule_definition_write_audit` 通过，`7 tests OK`
+
+聚合 focused 验证：`tests.test_tdx_local_first_batch` 通过，`95 tests OK`
+
+全量验证：`563 tests OK`
+
+当前边界：
+
+- `institution_rule_definition_allowed=True` 只允许 rule-definition-only
+- `formal_institution_rule_definition_write_allowed=False`
+- `trading_layer_read_allowed=False`
+- `signal_generation_allowed=False`
+- `backtest_execution_allowed=False`
+
+## 12. P9：信号与回测
+
+启动条件：
+
+- 正式制度规则定义文件已通过独立写入确认 gate 与读取 readiness gate。
 - trading layer read 通过独立审计。
 - signal generation gate 经过显式开放审计。
 
@@ -426,7 +470,7 @@ focused 验证：`tests.test_tdx_local_first_batch` 通过，`88 tests OK`
 - [ ] Pioneer v0.2 回测。
 - [ ] 15 笔交易段重跑与对照。
 
-## 12. 暂不做事项
+## 13. 暂不做事项
 
 - [ ] 不启用 `--fast-research`。
 - [ ] 不合并审计步骤。
@@ -435,12 +479,14 @@ focused 验证：`tests.test_tdx_local_first_batch` 通过，`88 tests OK`
 - [ ] 不把 P5 pass 解释成真实 trading layer read 已发生。
 - [ ] 不提前实现 signal generation。
 - [ ] 不提前执行 backtest。
+- [ ] 不把 P8a pass 解释成正式制度规则文件已写入。
+- [ ] 不把 `next_gate` 解释成可自动执行的写入动作。
 
-## 13. 进度估算口径
+## 14. 进度估算口径
 
 Mistral Large 的估算可以作为路线图参考，但采用以下校准口径：
 
-- 当前审计链路骨架：约 85% 到 90%。
+- 当前审计链路骨架：约 92% 到 95%。
 - 资格记录进入候选表之前的主线：约 60% 到 70%。
 - 完整可回测系统：约 40% 到 50%。
 
