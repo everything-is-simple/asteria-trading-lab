@@ -1,0 +1,19 @@
+{
+  "ashare_sample_id": "ASHARE-300750.SZ-2026-03-24-2026-04-03",
+  "ts_code": "300750.SZ",
+  "feasibility_status": "constrained",
+  "verdict_reason": [
+    "tradability_is_clear_but_price_limit_facts_are_incomplete",
+    "add_on_event_requires_pm_scale_and_pressure_review",
+    "pressure_adjust_sample_should_not_be_treated_as_clean_unconstrained_replay"
+  ],
+  "blocked_reason": [
+    "limit_state_unknown_on_planned_event",
+    "add_on_replay_requires_additional_pm_constraint_review"
+  ],
+  "evidence_ref": [
+    "ASHARE-CONSTRAINT-300750.SZ-2026-04-03-v0.1",
+    "docs/tachibana/method-pm-plans/first-batch-v0.1/ASHARE-300750.SZ-2026-03-24-2026-04-03.json",
+    "docs/tachibana/index/Tachibana-A股首批真实样本结构资格判定记录-v0.1.md"
+  ]
+}

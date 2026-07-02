@@ -617,6 +617,147 @@ $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-tradi
 
 该层仍禁止 `buy_signal / sell_signal / trade_accept / target_position / position_size / ashare_t1_action / limit_up_strategy`。即使后续人工把 `feasibility_status` 复核为 `executable`，也只能表示计划事件在制度事实下“执行可行性可记录”，不表示买入许可、卖出许可或目标仓位。
 
+## execution feasibility verdict merge 输出字段
+
+默认草案生成后，人工可以在独立目录中填写最小裁决 JSON，再走一次只读合流：
+
+```powershell
+$env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-feasibility-verdict-merge <execution-feasibility-verdict-dir> --method-pm-plan-dir <method-pm-plan-dir> --institution-fact-root Z:\asteria-trading-labs-data
+```
+
+人工复核文件只允许填写：
+
+- `ashare_sample_id`
+- `ts_code`
+- `feasibility_status`
+- `verdict_reason`
+- `blocked_reason`（可选）
+- `carry_forward_required`（可选）
+- `evidence_ref`（可选）
+
+其中 `feasibility_status` 只允许：
+
+- `not_evaluated`
+- `executable`
+- `constrained`
+- `blocked`
+- `carry_forward_required`
+
+系统态 `evidence_ready / blocked_by_fact_review` 不允许人工回填；`buy_signal / sell_signal / trade_accept / target_position / position_size / ashare_t1_action / limit_up_strategy` 仍然一律禁止。
+
+| 字段 | 含义 |
+|---|---|
+| `execution_feasibility_verdict_ready_count` | 合流成功的人工复核 verdict 数量。 |
+| `execution_feasibility_verdict_blocked_count` | 契约不合格、状态越界或代码不匹配而被阻断的 verdict 数量。 |
+| `unmatched_review_count` | 找不到对应人工复核文件的草案数量。 |
+| `execution_feasibility_verdicts` | 合流后的只读 `AShareExecutionFeasibilityVerdict`。 |
+| `verdict_source` | 从默认 `manual_review_required` 升级为 `manual_review`。 |
+| `next_action` | 通过时进入 `action:review_execution_feasibility_outcome`；阻断时回到 `action:review_execution_feasibility_verdicts`。 |
+
+该层的意义仍然是“人工记录执行可行性事实状态”，而不是“授予交易权”。即使人工把某条样本复核为 `executable`，也不等于 `trade_accept`，更不等于目标仓位、T+1 处理或涨跌停策略已经定义完成。
+
+## execution feasibility outcomes 输出字段
+
+人工 verdict 合流通过后，可以把其固化为只读 outcome 记录：
+
+```powershell
+$env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-feasibility-outcomes <execution-feasibility-verdict-dir> --method-pm-plan-dir <method-pm-plan-dir> --institution-fact-root Z:\asteria-trading-labs-data
+```
+
+该层是 verdict 的后继层，不新增 second review：
+
+| 字段 | 含义 |
+|---|---|
+| `execution_feasibility_outcome_count` | 本轮成功固化的 outcome 数量。 |
+| `execution_feasibility_outcomes` | 每条记录为 `AShareExecutionFeasibilityOutcome`，逐样本固定执行事实结果。 |
+| `outcome_status_counts` | 各类 `feasibility_status` 的批量计数。 |
+| `outcome_source` | 固定为 `execution_feasibility_verdict_merge`。 |
+| `outcome_note` | 只描述审计含义，不描述策略。 |
+| `next_action` | `executable / constrained` 进入 `action:review_execution_policy_candidates`；`blocked / carry_forward_required` 进入 `action:collect_additional_execution_evidence`；`not_evaluated` 回到 `action:review_execution_feasibility_verdicts`。 |
+
+Outcome 仍然不是交易许可层：
+
+- `executable` 不等于 `trade_accept`
+- `constrained` 不等于仓位折扣已经定义
+- `carry_forward_required` 不等于失败，只表示事实链应继续续传
+
+该层仍禁止 `buy_signal / sell_signal / trade_accept / target_position / position_size / ashare_t1_action / limit_up_strategy`。
+
+## execution policy candidates 输出字段
+
+Outcome 之后可以继续生成只读 `执行约束候选审计`，但它只表达“哪类 A 股制度约束值得进入下一步 review”，不定义规则：
+
+```powershell
+$env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-policy-candidates <execution-feasibility-verdict-dir> --method-pm-plan-dir <method-pm-plan-dir> --institution-fact-root Z:\asteria-trading-labs-data
+```
+
+第一版只覆盖三类最小候选集：
+
+- `t1`
+- `price_limit`
+- `suspension_resume`
+
+批量输出字段如下：
+
+| 字段 | 含义 |
+|---|---|
+| `execution_policy_candidate_count` | 本轮成功生成的候选审计记录数量；按“每样本多条候选项”计数。 |
+| `execution_policy_candidates` | 每条记录为 `AShareExecutionPolicyCandidateAudit`，固定落在 `t1 / price_limit / suspension_resume` 三类之一。 |
+| `execution_policy_candidate_blocked_count` | 因 `blocked / carry_forward_required / not_evaluated` 而未生成候选项的样本数量。 |
+| `execution_policy_candidate_blocked_items` | 逐样本 blocked item，说明是需要补证据还是回到人工 verdict。 |
+| `candidate_status_counts` | 候选项状态计数；第一版只允许 `review_required / evidence_incomplete / not_triggered_in_fact_window`。 |
+| `next_action` | 只要至少有一条候选记录，就固定为 `action:review_execution_policy_candidates`；否则按 blocked item 回到补证据或复核 verdict。 |
+
+候选层的固定解释边界：
+
+- `review_required` 不等于规则已经转正
+- `evidence_incomplete` 不等于失败，只表示事实还不足以定义该约束
+- `not_triggered_in_fact_window` 不等于该约束永久无关
+- `carry_forward_required / blocked / not_evaluated` 只进入 blocked items，不生成候选记录
+
+该层仍然一律禁止 `trade_accept / buy_signal / sell_signal / target_position / position_size / ashare_t1_action / limit_up_strategy / limit_down_strategy`，三道硬闸必须继续保持 `false`。
+
+## execution policy review merge 输出字段
+
+候选审计层之后，可以继续做只读 `候选约束人工复核/归档层`：
+
+```powershell
+$env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-policy-review-merge <execution-policy-review-dir> --method-pm-plan-dir <method-pm-plan-dir> --institution-fact-root Z:\asteria-trading-labs-data
+```
+
+这一层固定沿用“每样本一份 JSON -> merge 后逐候选固化”的模式：
+
+- 人工 JSON 只允许 `t1 / price_limit / suspension_resume`
+- 人工状态只允许 `review_required / evidence_incomplete / carry_forward_required / blocked`
+- 机器态 `not_triggered_in_fact_window` 不要求人工填写，merge 时自动归档为 `carry_forward_required`
+- outcome 已经是 `carry_forward_required / blocked / not_evaluated` 的样本，不生成 review record，只透传 blocked item
+
+批量输出字段如下：
+
+| 字段 | 含义 |
+|---|---|
+| `execution_policy_review_count` | 成功固化的 `AShareExecutionPolicyCandidateReview` 数量。 |
+| `execution_policy_reviews` | 逐候选的只读归档记录；每条记录保留机器态与人工复核态。 |
+| `execution_policy_review_blocked_count` | blocked item 数量；包括上游透传的 outcome blocked item，以及人工契约不通过的阻断项。 |
+| `execution_policy_review_blocked_items` | 逐样本阻断项，说明是需要补证据还是人工复核契约不合格。 |
+| `execution_policy_review_unmatched_count` | 缺失必需人工候选复核项的数量。 |
+| `execution_policy_review_unmatched_items` | 每条缺项都明确指出缺失的 `candidate_constraint_type`。 |
+| `review_status_counts` | 归档记录状态计数；本轮只允许 `review_required / evidence_incomplete / carry_forward_required / blocked`。 |
+| `next_action` | 成功归档后进入 `action:review_execution_policy_archive`；缺项或契约错误回到 `action:review_execution_policy_candidates`；只有上游 blocked item 时进入 `action:collect_additional_execution_evidence`。 |
+
+这一层仍然不是规则定义层：
+
+- `review_required` 不等于规则已转正
+- `evidence_incomplete` 不等于失败
+- 自动续传的 `carry_forward_required` 不等于该候选永久无关
+- `review_execution_policy_archive` 只表示进入归档审阅/后续研究准备，不表示允许交易
+
+该层仍禁止 `trade_accept / buy_signal / sell_signal / target_position / position_size / ashare_t1_action / limit_up_strategy / limit_down_strategy`，三道硬闸保持 `false`。
+
+`ashare_intake_validator.py --audit-first-batch-execution-policy-archive <review-dir> --method-pm-plan-dir <plan-dir> --institution-fact-root <root>` 会把 `execution_policy_review_merge` 的结果固化为只读 `AShareExecutionPolicyArchive`。它只承接 review 层的机器态与人工态，不再新增第二轮人工输入；`archive_status` 直接承接 `review_status`，`review_required` 进入 `action:prepare_execution_policy_research`，`evidence_incomplete / carry_forward_required / blocked` 继续进入 `action:collect_additional_execution_evidence`。该层仍固定 `institution_rule_definition_allowed=false / signal_generation_allowed=false / backtest_execution_allowed=false`，也不得输出 `trade_accept / buy_signal / target_position / position_size / ashare_t1_action / limit_up_strategy / limit_down_strategy`。
+
+`ashare_intake_validator.py --audit-first-batch-execution-policy-research-prep <review-dir> --method-pm-plan-dir <plan-dir> --institution-fact-root <root>` 会把 `execution_policy_archive` 的逐候选结果继续固化为只读 `AShareExecutionPolicyResearchPrep`。它不新增人工输入，也不定义制度规则；`research_prep_status` 直接承接 `archive_status`，其中 `review_required` 只表示该候选可以进入 `action:prepare_execution_policy_research`，`evidence_incomplete / carry_forward_required / blocked` 继续进入 `action:collect_additional_execution_evidence`。该层仍固定 `institution_rule_definition_allowed=false / signal_generation_allowed=false / backtest_execution_allowed=false`，也不得输出 `trade_accept / buy_signal / target_position / position_size / ashare_t1_action / limit_up_strategy / limit_down_strategy`。
+
 ## Backtest Input readiness 输出字段
 
 `--audit-first-batch-backtest-input-readiness` 的输出应作为 Backtest Input 快照准备前的只读闸门：

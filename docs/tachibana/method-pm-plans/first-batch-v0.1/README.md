@@ -205,21 +205,36 @@ python -m ashare_intake_validator --root Z:\asteria-trading-labs-data `
 
 ---
 
-## 7. 下一公里建议
+## 7. 制度事实最小通电状态
 
-1. **人工评审本批 3 份草案** —— 按 §4 清单复核；不通过则修改 / 拒绝
-2. **生成制度事实包** —— 从 `Z:\malf-data\market_meta.duckdb` 的 `tradability_fact` 表按 2026-03-24~04-03 窗口 + 3 个 ts_code 提取
-3. **跑 `--audit-first-batch-execution-constraint-snapshots` → `--audit-first-batch-execution-feasibility-gate` → `--audit-first-batch-execution-feasibility-verdicts`** —— 把链路从 `pending_constraint_evidence` 推到 `evidence_ready` 再到人工 verdict
-4. **覆盖反例 / unknown**：考虑给 002714.SZ (NM-NO-STRUCTURE) 和 601127.SH (unknown) 也填一份"为什么不进入 Method/PM"的占位草案
+1. **人工评审本批 3 份草案** —— 已阅并合入 main；后续仍可按 §4 清单复核修订。
+2. **制度事实包最小通电** —— 已从 `Z:\malf-data\market_meta.duckdb` 的 `tradability_fact` 按 2026-03-24~04-03 窗口 + 3 个 ts_code 生成 `ashare/institution-facts-v0.1/*.csv`。
+3. **执行证据链路** —— `--audit-first-batch-execution-constraint-snapshots`、`--audit-first-batch-execution-feasibility-gate`、`--audit-first-batch-execution-feasibility-verdicts` 均已通过；3 条样本从 `pending_constraint_evidence` 推进到 `evidence_ready`。
+4. **人工 verdict 已落地** —— [../../execution-feasibility-verdicts/first-batch-v0.1/README.md](../../execution-feasibility-verdicts/first-batch-v0.1/README.md) 已写入 3 份人工复核 JSON：`000001.SZ -> executable`、`300750.SZ -> constrained`、`600000.SH -> carry_forward_required`。
+5. **outcome 层已跑通** —— `--audit-first-batch-execution-feasibility-outcomes` 已把 3 份人工 verdict 固化为 `AShareExecutionFeasibilityOutcome`：`000001.SZ -> executable`、`300750.SZ -> constrained`、`600000.SH -> carry_forward_required`。
+6. **candidate audit 层已跑通** —— `--audit-first-batch-execution-policy-candidates` 已把 `000001.SZ` 与 `300750.SZ` 展开为 6 条 `AShareExecutionPolicyCandidateAudit`（`t1 / price_limit / suspension_resume` 各 1 条），并把 `600000.SH` 作为 `carry_forward_required` 留在 blocked items。
+7. **candidate review merge 层已落地** —— [../../execution-policy-reviews/first-batch-v0.1/README.md](../../execution-policy-reviews/first-batch-v0.1/README.md) 已写入 `000001.SZ` 与 `300750.SZ` 的人工候选复核 JSON，并通过 `--audit-first-batch-execution-policy-review-merge` 固化为 6 条 `AShareExecutionPolicyCandidateReview`；`600000.SH` 继续作为上游 blocked item 透传。
+8. **archive 层已接上** —— `--audit-first-batch-execution-policy-archive` 会把 review merge 的结果继续固化为 `AShareExecutionPolicyArchive`：`review_required` 只进入 `action:prepare_execution_policy_research`，`evidence_incomplete / carry_forward_required / blocked` 继续进入 `action:collect_additional_execution_evidence`，三道硬闸仍保持 False。
+9. **research prep 层已接上** —— `--audit-first-batch-execution-policy-research-prep` 会把 archive 的结果继续固化为 `AShareExecutionPolicyResearchPrep`：`review_required` 继续指向 `action:prepare_execution_policy_research`，`evidence_incomplete / carry_forward_required / blocked` 继续指向 `action:collect_additional_execution_evidence`；它是制度研究准备入口，不是规则定义，也不是交易许可。
+10. **research agenda 层已接上** —— `--audit-first-batch-execution-policy-research-agenda` 会把 `execution_policy_research_prep` 的逐候选记录继续按 `candidate_constraint_type` 聚合为只读 `AShareExecutionPolicyResearchAgendaItem`：首批 6 条 prep 记录被整理为 3 条议题（`t1 / price_limit / suspension_resume`），其中 `t1 -> ready_for_research`、`price_limit -> ready_for_research`、`suspension_resume -> carry_forward_required`；它仍然只是研究议题入口，不是规则定义，也不是交易许可。
+11. **当前边界** —— 即使 `000001.SZ` 被固化为 `executable outcome`，它也只表示“没有已知制度事实阻断该 replay”；即使候选层、review merge 层、archive 层、research prep 层或 research agenda 层出现 `review_required / ready_for_research`，也仍不得把它解释成 `trade_accept`、仓位许可、T+1 策略或涨跌停策略。
+12. **覆盖反例 / unknown**：考虑给 002714.SZ (NM-NO-STRUCTURE) 和 601127.SH (unknown) 也填一份"为什么不进入 Method/PM"的占位草案。
 
 ---
 
 **签字**: Claude (Opus 4.8) @ 2026-06-27
 **配套验证**:
-- 129 tests OK
+- 152 tests OK
 - 3 份草案通过 `audit_method_pm_plan_draft_contract`
 - 3 份草案通过 `audit_first_batch_method_pm_plan_merge`
 - 3 份草案生成 3 个 `BacktestInputSnapshot` (gate=pass, mode=hypothesis_replay)
 - 3 份草案生成 3 个 `AShareInstitutionConstraintGate` (status=pass)
-- 3 份草案生成 3 条 `AShareExecutionFeasibilityAudit` (status=pending_constraint_evidence)
+- 3 份草案生成 3 条 `AShareExecutionFeasibilityAudit` (status=evidence_ready)
+- 3 份草案生成 3 条 `AShareExecutionFeasibilityVerdict` draft (status=not_evaluated)
+- 3 份人工 verdict 通过 `audit_first_batch_execution_feasibility_verdict_merge`
+- 3 份人工 verdict 生成 3 条 `AShareExecutionFeasibilityOutcome`
+- `000001.SZ` 与 `300750.SZ` 生成 6 条 `AShareExecutionPolicyCandidateAudit`
+- `600000.SH` 在 candidate audit 层保留为 1 条 blocked item (`carry_forward_required`)
+- `000001.SZ` 与 `300750.SZ` 通过人工候选复核生成 6 条 `AShareExecutionPolicyCandidateReview`
+- `600000.SH` 在 candidate review merge 层继续保留为 1 条 blocked item (`carry_forward_required`)
 - 三道全局硬闸（signal/backtest/institution_rule_definition）全程 False

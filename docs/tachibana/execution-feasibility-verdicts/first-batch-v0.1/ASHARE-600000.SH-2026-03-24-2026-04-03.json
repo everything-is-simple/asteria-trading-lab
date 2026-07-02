@@ -1,0 +1,19 @@
+{
+  "ashare_sample_id": "ASHARE-600000.SH-2026-03-24-2026-04-03",
+  "ts_code": "600000.SH",
+  "feasibility_status": "carry_forward_required",
+  "verdict_reason": [
+    "wait_no_action_is_a_non_trade_method_state",
+    "lock_candidate_is_pm_ledger_continuation_not_trade_execution",
+    "requires_hold_style_alignment_before_execution_replay_judgment"
+  ],
+  "blocked_reason": [
+    "wait_no_action_execution_replay_not_allowed_in_current_method_catalog"
+  ],
+  "carry_forward_required": true,
+  "evidence_ref": [
+    "ASHARE-CONSTRAINT-600000.SH-2026-04-03-v0.1",
+    "docs/tachibana/method-pm-plans/first-batch-v0.1/ASHARE-600000.SH-2026-03-24-2026-04-03.json",
+    "docs/tachibana/index/Tachibana-A股首批真实样本结构资格判定记录-v0.1.md"
+  ]
+}

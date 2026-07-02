@@ -16,6 +16,8 @@
 - `ashare_intake_validator.py`：只读复核 `Z:\asteria-trading-labs-data\ashare\` A 股最小接入包的路径、字段与禁用交易字段。
 - `tachibana_front_filter.py`：只读运行 MALF-立花前置认知过滤器，输出 `rhythm_meaning / tachibana_applicability`，不输出交易或仓位字段。
 - `data_sources/tdx_local/first_batch.py`：基于 Tongdaxin + DuckDB 主账本生成首批真实 A 股样本接入包，并复用现有只读 gate 做样本覆盖审计。
+- `data_sources/tdx_local/institution_facts.py`：从本地 DuckDB `tradability_fact` 生成最小 A 股制度事实包，只用于把执行证据链路通到 `evidence_ready`。
+- `data_sources/tdx_local/` 下的 `execution policy archive / research prep` 相关入口：把 `execution_policy_review_merge` 继续固化为只读归档记录与研究准备记录，仍停在审计边界内。
 - `tests/fixtures/ashare-intake-ready/`：非真实 A 股最小接入包 fixture，只用于验证 ready 接入包仍必须停在 `structure_candidate` 并进入前置过滤器。
 - `tests/fixtures/front-filter/`：非真实 MALF snapshot fixture，只用于验证前置过滤器输出契约。
 - 输出目标：`data/pioneer-1975-1976/backtest-v0.1/`。
@@ -41,10 +43,17 @@ $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-tradi
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-backtest-input-snapshots path\to\method-pm-plan-dir
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-institution-constraint-gate path\to\method-pm-plan-dir
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-institution-feasibility-records path\to\method-pm-plan-dir
+$env:PYTHONPATH='src'; python -m data_sources.tdx_local.institution_facts --duckdb-root Z:\malf-data --data-root Z:\asteria-trading-labs-data --ts-code 000001.SZ --ts-code 300750.SZ --ts-code 600000.SH --window-start 2026-03-24 --window-end 2026-04-03
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-institution-fact-package
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-constraint-snapshots path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-feasibility-gate path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-feasibility-verdicts path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
+$env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-feasibility-verdict-merge path\to\execution-feasibility-verdict-dir --method-pm-plan-dir path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
+$env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-feasibility-outcomes path\to\execution-feasibility-verdict-dir --method-pm-plan-dir path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
+$env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-policy-candidates path\to\execution-feasibility-verdict-dir --method-pm-plan-dir path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
+$env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-policy-review-merge path\to\execution-policy-review-dir --method-pm-plan-dir path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
+$env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-policy-archive path\to\execution-policy-review-dir --method-pm-plan-dir path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
+$env:PYTHONPATH='src'; python -m ashare_intake_validator --root Z:\asteria-trading-labs-data --audit-first-batch-execution-policy-research-prep path\to\execution-policy-review-dir --method-pm-plan-dir path\to\method-pm-plan-dir --institution-fact-root Z:\asteria-trading-labs-data
 $env:PYTHONPATH='src'; python -m ashare_intake_validator --root tests\fixtures\ashare-intake-ready
 $env:PYTHONPATH='src'; python -m tachibana_front_filter --snapshot tests\fixtures\front-filter\alive-wave-ready.json
 $env:PYTHONPATH='src'; python -m tachibana_front_filter --snapshot tests\fixtures\front-filter\alive-wave-ready.json --record-draft --ashare-sample-id ASHARE-FIXTURE-001 --symbol-name "Ping An Bank"
@@ -122,8 +131,14 @@ Data / Signal / Backtest 接口边界集中在 `get_interface_boundary_catalog()
 
 `ashare_intake_validator.py --audit-institution-fact-package` 会验收 `ashare/institution-facts-v0.1/*.csv` 制度事实包。该包只允许记录交易日、停牌、涨跌停价、触及/收盘涨跌停状态、整手单位与来源引用；不得出现 `limit_up_strategy / trade_accept / target_position` 等策略、Signal 或仓位字段。通过只表示可以生成执行约束快照草案，不表示 A 股规则已经转正。
 
+`data_sources.tdx_local.institution_facts` 会从本地 DuckDB `market_meta.tradability_fact` 按 `ts_code + window` 生成最小制度事实包。当前策略会在本地日线可提供 `prev_close` 且板块口径明确时推导 `limit_up_price / limit_down_price`；`close_limit_status / touched_limit_status` 仍保持显式事实优先、缺失即 `unknown`，`board_lot_size=100`。它不定义完整涨跌停规则，不引入 AkShare / Baostock，也不生成任何交易许可。
+
 `ashare_intake_validator.py --audit-first-batch-execution-constraint-snapshots <dir> --institution-fact-root <root>` 会把已通过制度事实包验收的事实行，映射成只读 `AShareExecutionConstraintSnapshot` 草案。快照只引用 `constraint_ref / ts_code / trade_date / constraint_type / affected_execution_event / evidence_ref` 等事实字段，固定 `executable_status=not_evaluated`，因此不能直接驱动成交、PnL 或仓位调整。
 
 `ashare_intake_validator.py --audit-first-batch-execution-feasibility-gate <dir> --institution-fact-root <root>` 会把已匹配约束快照的 `AShareExecutionFeasibilityAudit` 从 `pending_constraint_evidence` 升级为 `evidence_ready`。`evidence_ready` 只表示制度事实证据已经对齐，仍固定 `backtest_execution_allowed=false / signal_generation_allowed=false`，不得解释成 `trade_accept`、仓位许可或成交许可。
 
 `ashare_intake_validator.py --audit-first-batch-execution-feasibility-verdicts <dir> --institution-fact-root <root>` 会在 `evidence_ready` 后生成只读 `AShareExecutionFeasibilityVerdict` 人工复核草案。草案只允许 `not_evaluated / evidence_ready / executable / constrained / blocked / carry_forward_required / blocked_by_fact_review` 这些执行事实状态，默认停在 `feasibility_status=not_evaluated`，并继续固定 `institution_rule_definition_allowed=false / signal_generation_allowed=false / backtest_execution_allowed=false`。该命令不得输出 `buy_signal / trade_accept / target_position / position_size / ashare_t1_action / limit_up_strategy`。
+
+`ashare_intake_validator.py --audit-first-batch-execution-feasibility-verdict-merge <review-dir> --method-pm-plan-dir <plan-dir> --institution-fact-root <root>` 会把人工填写的执行可行性裁决 JSON 合流回只读 verdict 层。人工复核只允许填写 `not_evaluated / executable / constrained / blocked / carry_forward_required`，不得复写系统态 `evidence_ready / blocked_by_fact_review`，也不得混入 `buy_signal / trade_accept / target_position / position_size / ashare_t1_action / limit_up_strategy`。合流通过后，输出仍只表达“执行事实状态”，不会生成信号、仓位或成交许可。
+
+`ashare_intake_validator.py --audit-first-batch-execution-feasibility-outcomes <verdict-dir> --method-pm-plan-dir <plan-dir> --institution-fact-root <root>` 会把 merge 后的人工 verdict 固化成只读 `AShareExecutionFeasibilityOutcome`。Outcome 只承接 `feasibility_status` 的执行事实语义：`executable` 仅表示当前事实下没有已知执行阻断，`constrained` 表示仍有执行约束待审，`carry_forward_required` 表示该事实链应继续续传，`not_evaluated` 表示人工 verdict 仍未闭合。它继续固定 `institution_rule_definition_allowed=false / signal_generation_allowed=false / backtest_execution_allowed=false`，也不得输出 `trade_accept / buy_signal / target_position / position_size / ashare_t1_action / limit_up_strategy`。
